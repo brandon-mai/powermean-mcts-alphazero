@@ -73,7 +73,7 @@ class TicTacToe(AbstractGame):
 
     def get_encoded_state(self, state):
         encoded_state = np.stack(
-            (state == 1, state == 0, state == 2)
+            (state == -1, state == 0, state == 1)
         ).astype(np.float32)
         return encoded_state
 
