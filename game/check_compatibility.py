@@ -23,6 +23,10 @@ REQUIRED_METHODS = [
 REQUIRED_ATTRIBUTES = ["name", "num_player"]
 
 def check_interface(game_obj: Any) -> dict:
+    num_player = getattr(game_obj, "num_player", None)
+    if num_player not in [1, 2]:
+        report["ok"] = False
+        report["messages"].append(f"num_player must be 1 or 2, got {num_player}")
     report = {"ok": True, "messages": []}
 
     try:
@@ -59,96 +63,59 @@ def check_interface(game_obj: Any) -> dict:
 def run_runtime_tests(game_obj: Any) -> dict:
     results = {"ok": True, "messages": []}
 
+    import random
     state = game_obj.get_initial_state()
     results["initial_state_shape"] = state.shape
-
-    # get_valid_moves
-    try:
-        valid = game_obj.get_valid_moves(state)
-        results["valid_moves"] = valid
-        if not isinstance(valid, (list, tuple, np.ndarray)):
-            results["ok"] = False
-            results["messages"].append("get_valid_moves did not return a list/tuple/ndarray")
-    except Exception as e:
-        results["ok"] = False
-        results["messages"].append(f"get_valid_moves raised: {e}")
-        return results
-
-    # current player
-    try:
-        current = game_obj.get_current_player(state)
-        results["current_player"] = current
-    except Exception as e:
-        results["ok"] = False
-        results["messages"].append(f"get_current_player raised: {e}")
-        return results
-
-    # pick a valid move if any
-    move = None
-    try:
-        if not isinstance(valid, list):
-            raise TypeError("get_valid_moves must return a list!")
-        if len(valid) == 0:
-            results["messages"].append("No valid moves available on initial state")
-        else:
-            move = int(valid[0])
-            results["picked_move"] = move
-    except Exception as e:
-        results["ok"] = False
-        results["messages"].append(f"Error processing valid moves: {e}")
-        return results
-
-    # test get_next_state
-    try:
-        if move is not None:
+    step = 0
+    ended = False
+    history = []
+    while not ended:
+        try:
+            valid = game_obj.get_valid_moves(state)
+            if not isinstance(valid, list):
+                raise TypeError("get_valid_moves must return a list!")
+            if len(valid) == 0:
+                results["messages"].append(f"Step {step}: No valid moves available.")
+                break
+            current = game_obj.get_current_player(state)
+            # Check player index
+            num_player = getattr(game_obj, "num_player", None)
+            if num_player == 1 and current != 1:
+                raise ValueError(f"For 1-player games, player index must be 1, got {current}")
+            if num_player == 2 and current not in [1, -1]:
+                raise ValueError(f"For 2-player games, player index must be 1 or -1, got {current}")
+            move = random.choice(valid)
             next_state = game_obj.get_next_state(state, move)
-            results["next_state_shape"] = getattr(next_state, "shape", None)
-        else:
-            next_state = state
-    except Exception as e:
-        results["ok"] = False
-        results["messages"].append(f"get_next_state raised: {e}")
-        return results
-
-    # test get_value_and_terminated
-    try:
-        reward, ended = game_obj.get_value_and_terminated(next_state, current)
-        results["reward"] = reward
-        results["ended"] = bool(ended)
-    except Exception as e:
-        results["ok"] = False
-        results["messages"].append(f"get_value_and_terminated raised: {e}")
-
-    # test check_win
-    try:
-        check = game_obj.check_win(next_state, current)
-        results["check_win"] = check
-    except Exception as e:
-        results["ok"] = False
-        results["messages"].append(f"check_win raised: {e}")
-
-    # test opponent and opponent_value
-    try:
-        opp = game_obj.get_opponent(current)
-        results["opponent"] = opp
-        opp_val = game_obj.get_opponent_value(reward)
-        results["opponent_value"] = opp_val
-    except Exception as e:
-        results["ok"] = False
-        results["messages"].append(f"get_opponent/get_opponent_value raised: {e}")
-
-    # test encoded state
-    try:
-        enc = game_obj.get_encoded_state(next_state)
-        if not isinstance(enc, np.ndarray):
+            reward, ended = game_obj.get_value_and_terminated(next_state, current)
+            # Check reward
+            if reward < 0:
+                raise ValueError(f"Returned reward must be non-negative! Got {reward} at step {step}")
+            check = game_obj.check_win(next_state, current)
+            opp = game_obj.get_opponent(current)
+            opp_val = game_obj.get_opponent_value(reward)
+            enc = game_obj.get_encoded_state(next_state)
+            history.append({
+                "step": step,
+                "player": current,
+                "move": move,
+                "reward": reward,
+                "ended": ended,
+                "check_win": check,
+                "opponent": opp,
+                "opponent_value": opp_val,
+                "encoded_shape": enc.shape if isinstance(enc, np.ndarray) else None
+            })
+            state = next_state
+            step += 1
+        except Exception as e:
             results["ok"] = False
-            results["messages"].append("get_encoded_state did not return a numpy array")
-        else:
-            results["encoded_shape"] = enc.shape
-    except Exception as e:
-        results["ok"] = False
-        results["messages"].append(f"get_encoded_state raised: {e}")
-
+            results["messages"].append(f"Step {step}: Exception: {e}")
+            break
+    results["history"] = history
+    if history:
+        results["final_reward"] = history[-1]["reward"]
+        results["final_ended"] = history[-1]["ended"]
+        results["final_check_win"] = history[-1]["check_win"]
     return results
 
 def print_report(interface_report: dict, runtime_report: dict):

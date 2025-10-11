@@ -13,8 +13,8 @@ class TicTacToe(AbstractGame):
 
     def get_current_player(self, state):
         count1 = np.sum(state == 1)
-        count2 = np.sum(state == 2)
-        return 1 if count1 <= count2 else 2
+        count2 = np.sum(state == -1)
+        return 1 if count1 <= count2 else -1
 
     def get_next_state(self, state, action):
         player = self.get_current_player(state)
@@ -39,17 +39,22 @@ class TicTacToe(AbstractGame):
     def get_value_and_terminated(self, state, player):
         result = self.check_win(state, player)
         if result == "win":
-            return 1.0, True
+            reward = 1.0
         elif result == "lose":
-            return -1.0, True
+            reward = 0.0
         elif result == "draw":
-            return 0.0, True
+            reward = 0.0
         elif result == "not_ended":
-            return 0.0, False
-        return 0.0, False
+            reward = 0.0
+        else:
+            reward = 0.0
+        if reward < 0:
+            raise ValueError("Returned reward must be non-negative!")
+        ended = result in ["win", "lose", "draw"]
+        return reward, ended
 
     def get_opponent(self, player):
-        return 2 if player == 1 else 1
+        return -player
 
     def get_opponent_value(self, value):
         return -value
@@ -57,14 +62,14 @@ class TicTacToe(AbstractGame):
     def change_perspective(self, state, player):
         if player == 1:
             return state.copy()
-        elif player == 2:
+        elif player == -1:
             new_state = state.copy()
-            new_state[state == 1] = None 
-            new_state[state == 2] = 1
-            new_state[new_state == None] = 2
+            new_state[state == 1] = 99
+            new_state[state == -1] = 1
+            new_state[new_state == 99] = -1
             return new_state
         else:
-            raise ValueError("player must be 1 or 2")
+            raise ValueError("player must be 1 or -1")
 
     def get_encoded_state(self, state):
         encoded_state = np.stack(
