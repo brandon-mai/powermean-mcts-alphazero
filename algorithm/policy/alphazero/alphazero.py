@@ -5,7 +5,6 @@ import torch.nn.functional as F
 from tqdm import trange
 from mcts import Stochastic_PowerMean_UCT
 
-
 class AlphaZero:
     def __init__(self, model, optimizer, game, args):
         self.model = model

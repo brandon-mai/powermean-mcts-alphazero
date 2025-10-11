@@ -4,7 +4,14 @@ This guide describes how to implement a new game class by inheriting from `Abstr
 1. `self.name: str`  
 	The name of the game.
 2. `self.num_player: int`  
-	The number of players in the game.
+	The number of players in the game. Only 1-player or 2-player games are supported.
+
+### Player Index Rules
+- For 1-player games: player index must always be 1.
+- For 2-player games: player index must be either 1 or -1.
+
+### Reward Rules
+- Returned reward must always be non-negative (>= 0). If your logic returns a negative reward, raise an error.
 ### Required Methods
 1. `get_initial_state(self)`  
 	Returns the initial state of the game as a numpy object.
@@ -19,7 +26,8 @@ This guide describes how to implement a new game class by inheriting from `Abstr
 	- `reward`: a float representing the intermediate reward
 	- `end`: a boolean indicating whether the game is over
 5. `get_opponent(self, player)`  
-	Returns the next player in turn order after the given player. For multiplayer games, this should cycle through all players (e.g., 1 → 2 → 3 → 4 → 1).
+	For 2-player games, returns the opponent of the given player (i.e., returns -player, where player is either 1 or -1).
+    For 1-player games, just return player.
 6. `get_opponent_value(self, value)`  
 	Returns the value as seen from the perspective of opponent.
 7. `change_perspective(self, state, player)`  
