@@ -3,9 +3,9 @@ import numpy as np
 import inspect
 
 # Import the game to check here. Replace with another game class as needed.
-from .tictactoe import TicTacToe as GameClass
+from tictactoe import TicTacToe as GameClass
 
-from .abstract_game import AbstractGame
+from abstract_game import AbstractGame
 
 REQUIRED_METHODS = [
     "get_next_state",
@@ -131,7 +131,7 @@ def run_runtime_tests(game_obj: Any) -> dict:
     try:
         opp = game_obj.get_opponent(current)
         results["opponent"] = opp
-        opp_val = game_obj.get_opponent_value(reward, current)
+        opp_val = game_obj.get_opponent_value(reward)
         results["opponent_value"] = opp_val
     except Exception as e:
         results["ok"] = False

@@ -1,5 +1,5 @@
 import numpy as np
-from .abstract_game import AbstractGame
+from abstract_game import AbstractGame
 
 class ConnectFour(AbstractGame):
     def __init__(self):
