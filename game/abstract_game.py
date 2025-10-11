@@ -1,6 +1,9 @@
 from abc import ABC, abstractmethod
 
 class AbstractGame(ABC):
+    @abstractmethod
+    def get_initial_state(self):
+        pass
     def __init__(self, name: str, num_player: int):
         self.name = name
         self.num_player = num_player
@@ -36,7 +39,7 @@ class AbstractGame(ABC):
     @abstractmethod
     def get_encoded_state(self, state):
         pass
-    
+
     @abstractmethod
     def get_current_player(self, state):
         pass    

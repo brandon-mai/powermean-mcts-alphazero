@@ -9,6 +9,9 @@ class ConnectFour(AbstractGame):
         self.action_size = self.column_count
         self.in_a_row = 4
 
+    def get_initial_state(self):
+        return np.zeros((self.row_count, self.column_count), dtype=int)
+
     def get_current_player(self, state):
         count1 = np.sum(state == 1)
         count2 = np.sum(state == 2)
