@@ -8,6 +8,9 @@ class TicTacToe(AbstractGame):
         self.column_count = 3
         self.action_size = self.row_count * self.column_count
 
+    def get_initial_state(self):
+        return np.zeros((self.row_count, self.column_count), dtype=int)
+
     def get_current_player(self, state):
         count1 = np.sum(state == 1)
         count2 = np.sum(state == 2)

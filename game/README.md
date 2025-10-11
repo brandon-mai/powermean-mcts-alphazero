@@ -6,7 +6,9 @@ This guide describes how to implement a new game class by inheriting from `Abstr
 2. `self.num_player: int`  
 	The number of players in the game.
 ### Required Methods
-1. `get_next_state(self, state, action)`  
+1. `get_initial_state(self)`  
+	Returns the initial state of the game as a numpy object.
+2. `get_next_state(self, state, action)`  
 	Returns the next state after performing the given action.
 2. `get_valid_moves(self, state)`  
 	Returns a list of valid actions for the given state.
