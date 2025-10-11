@@ -36,3 +36,7 @@ class AbstractGame(ABC):
     @abstractmethod
     def get_encoded_state(self, state):
         pass
+    
+    @abstractmethod
+    def get_current_player(self, state):
+        pass    

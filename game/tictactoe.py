@@ -1,47 +1,54 @@
 import numpy as np
+from .abstract_game import AbstractGame
 
-class TicTacToe:
+class TicTacToe(AbstractGame):
     def __init__(self):
+        super().__init__(name="TicTacToe", num_player=2)
         self.row_count = 3
         self.column_count = 3
         self.action_size = self.row_count * self.column_count
 
-    def get_initial_state(self):
-        return np.zeros((self.row_count, self.column_count))
+    def get_current_player(self, state):
+        count1 = np.sum(state == 1)
+        count2 = np.sum(state == 2)
+        return 1 if count1 <= count2 else 2
 
-    def get_next_state(self, state, action, player):
+    def get_next_state(self, state, action):
+        player = self.get_current_player(state)
         row = action // self.column_count
         column = action % self.column_count
-        state[row, column] = player
-        return state
+        new_state = state.copy()
+        new_state[row, column] = player
+        return new_state
 
-    def get_valid_moves(self, state):
-        return (state.reshape(-1) == 0).astype(np.uint8)
+    def get_valid_moves(self, state) -> list:
+        return [i for i in range(self.action_size) if state.flatten()[i] == 0]
 
-    def check_win(self, state, action):
-        if action == None:
-            return False
-        row = action // self.column_count
-        column = action % self.column_count
-        player = state[row, column]
-        return (
-            np.sum(state[row, :]) == player * self.column_count
-            or np.sum(state[:, column]) == player * self.row_count
-            or np.sum(np.diag(state)) == player * self.row_count
-            or np.sum(np.diag(np.flip(state, axis=0))) == player * self.row_count
-        )
+    def check_win(self, state, player: int) -> str:
+        if self._is_win(state, player):
+            return "win"
+        elif self._is_win(state, self.get_opponent(player)):
+            return "lose"
+        elif not any(v == 0 for v in state.flatten()):
+            return "draw"
+        return "not_ended"
 
-    def get_value_and_terminated(self, state, action):
-        if self.check_win(state, action):
-            return 1, True
-        if np.sum(self.get_valid_moves(state)) == 0:
-            return 0, True
-        return 0, False
+    def get_value_and_terminated(self, state, player):
+        result = self.check_win(state, player)
+        if result == "win":
+            return 1.0, True
+        elif result == "lose":
+            return -1.0, True
+        elif result == "draw":
+            return 0.0, True
+        elif result == "not_ended":
+            return 0.0, False
+        return 0.0, False
 
     def get_opponent(self, player):
-        return -player
+        return 2 if player == 1 else 1
 
-    def get_opponent_value(self, value):
+    def get_opponent_value(self, value, player):
         return -value
 
     def change_perspective(self, state, player):
@@ -49,7 +56,21 @@ class TicTacToe:
 
     def get_encoded_state(self, state):
         encoded_state = np.stack(
-            (state == -1, state == 0, state == 1)
+            (state == 1, state == 0, state == 2)
         ).astype(np.float32)
         return encoded_state
 
+    def _is_win(self, state, player):
+        # Check rows and columns
+        for i in range(self.row_count):
+            if np.all(state[i, :] == player):
+                return True
+        for j in range(self.column_count):
+            if np.all(state[:, j] == player):
+                return True
+        # Check diagonals
+        if np.all(np.diag(state) == player):
+            return True
+        if np.all(np.diag(np.fliplr(state)) == player):
+            return True
+        return False
