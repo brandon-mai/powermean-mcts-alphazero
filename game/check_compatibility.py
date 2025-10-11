@@ -166,7 +166,6 @@ def print_report(interface_report: dict, runtime_report: dict):
             print(f"{k}: {v}")
     print("Runtime overall OK:", runtime_report.get("ok"))
 
-
 def main():
     print("Checking game class:", GameClass.__name__)
     try:
@@ -178,7 +177,6 @@ def main():
     iface = check_interface(game)
     runtime = run_runtime_tests(game)
     print_report(iface, runtime)
-
 
 if __name__ == "__main__":
     main()

@@ -59,7 +59,16 @@ class ConnectFour(AbstractGame):
         return -value
 
     def change_perspective(self, state, player):
-        return state * player
+        if player == 1:
+            return state.copy()
+        elif player == 2:
+            new_state = state.copy()
+            new_state[state == 1] = None  
+            new_state[state == 2] = 1
+            new_state[new_state == None] = 2
+            return new_state
+        else:
+            raise ValueError("player must be 1 or 2")
 
     def get_encoded_state(self, state):
         encoded_state = np.stack(
