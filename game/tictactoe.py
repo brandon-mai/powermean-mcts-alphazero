@@ -1,5 +1,5 @@
 import numpy as np
-from .abstract_game import AbstractGame
+from abstract_game import AbstractGame
 
 class TicTacToe(AbstractGame):
     def __init__(self):
@@ -51,7 +51,7 @@ class TicTacToe(AbstractGame):
     def get_opponent(self, player):
         return 2 if player == 1 else 1
 
-    def get_opponent_value(self, value, player):
+    def get_opponent_value(self, value):
         return -value
 
     def change_perspective(self, state, player):
