@@ -48,7 +48,7 @@ class ConnectFour(AbstractGame):
         elif result == "lose":
             reward = 0.0
         elif result == "draw":
-            reward = 0.0
+            reward = 0.5
         elif result == "not_ended":
             reward = 0.0
         else:
@@ -65,20 +65,20 @@ class ConnectFour(AbstractGame):
         return -value
 
     def change_perspective(self, state, player):
-        if player == 1:
+        if (player == 1) or (player == -1):
             return state.copy()
         elif player == -1:
             new_state = state.copy()
-            new_state[state == 1] = 99
+            new_state[state == 1] = None
             new_state[state == -1] = 1
-            new_state[new_state == 99] = -1
+            new_state[new_state == None] = -1
             return new_state
         else:
             raise ValueError("player must be 1 or -1")
 
     def get_encoded_state(self, state):
         encoded_state = np.stack(
-            (state == 1, state == 0, state == 2)
+            (state == -1, state == 0, state == 1)
         ).astype(np.float32)
         return encoded_state
 

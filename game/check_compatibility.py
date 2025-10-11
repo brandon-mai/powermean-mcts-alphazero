@@ -94,6 +94,11 @@ def run_runtime_tests(game_obj: Any) -> dict:
             opp = game_obj.get_opponent(current)
             opp_val = game_obj.get_opponent_value(reward)
             enc = game_obj.get_encoded_state(next_state)
+            # Check encoded state only contains 0, -1, 1
+            if isinstance(enc, np.ndarray):
+                unique_vals = np.unique(next_state)
+                if not set(unique_vals).issubset({-1, 0, 1}):
+                    raise ValueError(f"State contains values outside of -1, 0, 1: {unique_vals}")
             history.append({
                 "step": step,
                 "player": current,
