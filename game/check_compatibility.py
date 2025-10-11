@@ -119,19 +119,33 @@ def run_runtime_tests(game_obj: Any) -> dict:
     return results
 
 def print_report(interface_report: dict, runtime_report: dict):
-    print("\n=== Interface Check ===")
+    print("\n==================== INTERFACE CHECK ====================")
+    ok = interface_report.get("ok")
     for m in interface_report.get("messages", []):
-        print(" -", m)
-    print("Interface overall OK:", interface_report.get("ok"))
+        if any(w in m.lower() for w in ["missing", "error", "not", "fail"]):
+            print(f"[ERROR] {m}")
+        else:
+            print(f"[OK] {m}")
+    print(f"Interface overall: {'✅ PASS' if ok else '❌ FAIL'}")
 
-    print("\n=== Runtime Tests ===")
+    print("\n==================== RUNTIME TESTS =====================")
+    ok = runtime_report.get("ok")
     for k, v in runtime_report.items():
         if k == "messages":
             for m in v:
-                print(" -", m)
+                if "Exception" in m or "error" in m.lower() or "fail" in m.lower():
+                    print(f"[ERROR] {m}")
+                else:
+                    print(f"[INFO] {m}")
+        elif k == "history":
+            print(f"Game steps: {len(v)}")
+            if v:
+                print("Last 3 steps:")
+                for h in v[-3:]:
+                    print(f"  Step {h['step']}: Player={h['player']}, Move={h['move']}, Reward={h['reward']}, Ended={h['ended']}, Win={h['check_win']}")
         else:
             print(f"{k}: {v}")
-    print("Runtime overall OK:", runtime_report.get("ok"))
+    print(f"Runtime overall: {'✅ PASS' if ok else '❌ FAIL'}")
 
 def main():
     print("Checking game class:", GameClass.__name__)
