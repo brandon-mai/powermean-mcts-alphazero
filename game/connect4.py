@@ -65,10 +65,7 @@ class ConnectFour(AbstractGame):
         return -value
 
     def change_perspective(self, state, player):
-        if (player == 1) or (player == -1):
-            return state * player
-        else:
-            raise ValueError("player must be 1 or -1")
+        return state * player
 
     def get_encoded_state(self, state):
         encoded_state = np.stack(
@@ -77,6 +74,7 @@ class ConnectFour(AbstractGame):
         
         if len(state.shape) == 3:
             encoded_state = np.swapaxes(encoded_state, 0, 1)
+        
         return encoded_state
 
     def _is_win(self, state, row, column, player):
