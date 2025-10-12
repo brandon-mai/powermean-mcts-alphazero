@@ -61,13 +61,7 @@ class TicTacToe(AbstractGame):
 
     def change_perspective(self, state, player):
         if (player == 1) or (player == -1):
-            return state.copy()
-        elif player == -1:
-            new_state = state.copy()
-            new_state[state == 1] = None
-            new_state[state == -1] = 1
-            new_state[new_state == None] = -1
-            return new_state
+            return state * player
         else:
             raise ValueError("player must be 1 or -1")
 
@@ -75,6 +69,9 @@ class TicTacToe(AbstractGame):
         encoded_state = np.stack(
             (state == -1, state == 0, state == 1)
         ).astype(np.float32)
+        
+        if len(state.shape) == 3:
+            encoded_state = np.swapaxes(encoded_state, 0, 1)
         return encoded_state
 
     def _is_win(self, state, player):

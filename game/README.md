@@ -40,4 +40,6 @@ This guide describes how to implement a new game class by inheriting from `Abstr
 - All methods must be implemented as described above.
 - Attribute types must match the requirements.
 - The implementation should be clear and easy to maintain.
+- The methods get_encoded_state and change_perspective should be able to handle stacked states (multi-state input), e.g., when the input is an array of multiple states, to ensure compatibility with operations using np.stack().
+
 This structure ensures that all game classes are consistent and compatible with the rest of the framework.
