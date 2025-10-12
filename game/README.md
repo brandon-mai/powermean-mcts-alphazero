@@ -31,7 +31,7 @@ This guide describes how to implement a new game class by inheriting from `Abstr
 6. `get_opponent_value(self, value)`  
 	Returns the value as seen from the perspective of opponent.
 7. `change_perspective(self, state, player)`  
-	Returns the state as seen from the perspective of the specified player.
+	Returns the state as seen from the perspective of the specified player to player 1's view.
 8. `get_encoded_state(self, state)`  
 	Returns a numpy object representing the encoded state. MUST handle state batch with np.swapaxes().
 9. `get_current_player(self, state)`  
