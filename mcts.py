@@ -3,8 +3,8 @@ import math
 import torch
 
 
-class Node:
-    """A node in the MCTS tree.
+class Node_Local:
+    """Local: Separately tracks Q and V values for both players, no playout value is negated.
     Args:
         game: The game object.
         args: The arguments for MCTS.
@@ -57,7 +57,7 @@ class Node:
                 child_state = self.game.get_next_state(child_state, action)
                 child_state = self.game.change_perspective(child_state, player=-1)
 
-                child = Node(game=self.game, args=self.args, state=child_state, player=-self.player,
+                child = Node_Local(game=self.game, args=self.args, state=child_state, player=-self.player,
                              parent=self, action_taken=action, prior=prob)
                 self.children.append(child)
                 
@@ -86,8 +86,8 @@ class Node:
         self.visit_count += 1
         
         if self.parent:
-            self.parent.q_node_values = self.q_node_values.copy()
-            self.parent.v_node_values = self.v_node_values.copy()
+            self.parent.q_node_values[self.player_idx] = self.q_node_values[self.player_idx]
+            self.parent.v_node_values[self.player_idx] = self.v_node_values[self.player_idx]
             self.parent.backpropagate()  
 
 
@@ -99,13 +99,9 @@ class MCTS_Local_Parallel:
         self.model = model
         
     @torch.no_grad()
-    def search(self, states, spGames):
-        encoded_states = self.game.get_encoded_state(states)
-        if len(encoded_states.shape) == 3:
-            encoded_states = np.swapaxes(encoded_states, 0, 1)
-        
+    def search(self, states, spGames):    
         policies, _ = self.model(
-            torch.tensor(encoded_states, device=self.model.device)
+            torch.tensor(self.game.get_encoded_state(states), device=self.model.device)
         )
         policies = torch.softmax(policies, axis=1).cpu().numpy()
         policies = (1 - self.args['dirichlet_epsilon']) * policies + self.args['dirichlet_epsilon'] \
@@ -115,9 +111,12 @@ class MCTS_Local_Parallel:
             spg_policy = policies[i]
             valid_moves = self.game.get_valid_moves(states[i])
             spg_policy *= valid_moves
-            spg_policy /= np.sum(spg_policy)
+            if np.sum(spg_policy) == 0:
+                spg_policy = valid_moves / np.sum(valid_moves)
+            else:
+                spg_policy /= np.sum(spg_policy)
 
-            spg.root = Node(self.game, self.args, states[i], self.game.get_current_player(states[i]), visit_count=1)
+            spg.root = Node_Local(self.game, self.args, states[i], self.game.get_current_player(states[i]), visit_count=1)
             spg.root.expand(spg_policy)
         
         for search in range(self.args['num_searches']):
@@ -128,11 +127,10 @@ class MCTS_Local_Parallel:
                 while node.is_fully_expanded():
                     node = node.select()
 
-                # TODO: Adjust parameters according to the game class. MUST return 1 or 0: win or not
-                value, is_terminal = self.game.get_value_and_terminated(node.state, node.action_taken)
+                value, is_terminal = self.game.get_value_and_terminated(node.state, self.game.get_current_player(node.state))
                 
                 if is_terminal:
-                    node.backpropagate(intermediate_reward=value)
+                    node.backpropagate(immediate_reward=value)
                     
                 else:
                     spg.node = node
@@ -141,12 +139,8 @@ class MCTS_Local_Parallel:
                     
             if len(expandable_spGames) > 0:
                 states = np.stack([spGames[mappingIdx].node.state for mappingIdx in expandable_spGames])
-                encoded_states = self.game.get_encoded_state(states)
-                if len(encoded_states.shape) == 3:
-                    encoded_states = np.swapaxes(encoded_states, 0, 1)
-                
                 policies, values = self.model(
-                    torch.tensor(encoded_states, device=self.model.device)
+                    torch.tensor(self.game.get_encoded_state(states), device=self.model.device)
                 )
                 policies = torch.softmax(policies, axis=1).cpu().numpy()
                 values = values.cpu().numpy()
@@ -154,6 +148,129 @@ class MCTS_Local_Parallel:
             for i, mappingIdx in enumerate(expandable_spGames):
                 node = spGames[mappingIdx].node
                 spg_policy, spg_value = policies[i], values[i]
+                
+                valid_moves = self.game.get_valid_moves(node.state)
+                spg_policy *= valid_moves
+                spg_policy /= np.sum(spg_policy)
+
+                node.expand(spg_policy)
+                node.backpropagate(value=spg_value)
+
+
+class Node_Global:
+    """Global: Both players share the same Q and V values, playout value is negated for the opponent."""
+    def __init__(self, game, args, state, parent=None, action_taken=None, prior=0, visit_count=0):
+        self.game = game
+        self.args = args
+        self.state = state
+        self.parent = parent
+        self.action_taken = action_taken
+        self.prior = prior
+        
+        self.children = []
+        
+        self.visit_count = visit_count
+        self.value_sum = 0
+        
+    def is_fully_expanded(self):
+        return len(self.children) > 0
+    
+    def select(self):
+        best_child = None
+        best_ucb = -np.inf
+        
+        for child in self.children:
+            ucb = self.get_ucb(child)
+            if ucb > best_ucb:
+                best_child = child
+                best_ucb = ucb
+                
+        return best_child
+    
+    def get_ucb(self, child):
+        if child.visit_count == 0:
+            q_value = 0
+        else:
+            q_value = 1 - ((child.value_sum / child.visit_count) + 1) / 2
+        return q_value + self.args['C'] * (math.sqrt(self.visit_count) / (child.visit_count + 1)) * child.prior
+    
+    def expand(self, policy):
+        for action, prob in enumerate(policy):
+            if prob > 0:
+                child_state = self.state.copy()
+                child_state = self.game.get_next_state(child_state, action, 1)
+                child_state = self.game.change_perspective(child_state, player=-1)
+
+                child = Node_Global(self.game, self.args, child_state, self, action, prob)
+                self.children.append(child)
+                
+        return child
+            
+    def backpropagate(self, value):
+        self.value_sum += value
+        self.visit_count += 1
+        
+        value = self.game.get_opponent_value(value)
+        if self.parent is not None:
+            self.parent.backpropagate(value)  
+
+
+class MCTS_Global_Parallel:
+    """Global: Both players share the same Q and V values, playout value is negated for the opponent."""
+    def __init__(self, game, args, model):
+        self.game = game
+        self.args = args
+        self.model = model
+        
+    @torch.no_grad()
+    def search(self, states, spGames):
+        policy, _ = self.model(
+            torch.tensor(self.game.get_encoded_state(states), device=self.model.device)
+        )
+        policy = torch.softmax(policy, axis=1).cpu().numpy()
+        policy = (1 - self.args['dirichlet_epsilon']) * policy + self.args['dirichlet_epsilon'] \
+            * np.random.dirichlet([self.args['dirichlet_alpha']] * self.game.action_size, size=policy.shape[0])
+        
+        for i, spg in enumerate(spGames):
+            spg_policy = policy[i]
+            valid_moves = self.game.get_valid_moves(states[i])
+            spg_policy *= valid_moves
+            spg_policy /= np.sum(spg_policy)
+
+            spg.root = Node_Global(self.game, self.args, states[i], visit_count=1)
+            spg.root.expand(spg_policy)
+        
+        for search in range(self.args['num_searches']):
+            for spg in spGames:
+                spg.node = None
+                node = spg.root
+
+                while node.is_fully_expanded():
+                    node = node.select()
+
+                value, is_terminal = self.game.get_value_and_terminated(node.state, node.action_taken)
+                value = self.game.get_opponent_value(value)
+                
+                if is_terminal:
+                    node.backpropagate(value)
+                    
+                else:
+                    spg.node = node
+                    
+            expandable_spGames = [mappingIdx for mappingIdx in range(len(spGames)) if spGames[mappingIdx].node is not None]
+                    
+            if len(expandable_spGames) > 0:
+                states = np.stack([spGames[mappingIdx].node.state for mappingIdx in expandable_spGames])
+                
+                policy, value = self.model(
+                    torch.tensor(self.game.get_encoded_state(states), device=self.model.device)
+                )
+                policy = torch.softmax(policy, axis=1).cpu().numpy()
+                value = value.cpu().numpy()
+                
+            for i, mappingIdx in enumerate(expandable_spGames):
+                node = spGames[mappingIdx].node
+                spg_policy, spg_value = policy[i], value[i]
                 
                 valid_moves = self.game.get_valid_moves(node.state)
                 spg_policy *= valid_moves
