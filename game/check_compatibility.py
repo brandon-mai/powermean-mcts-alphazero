@@ -94,6 +94,7 @@ def run_runtime_tests(game_obj: Any) -> dict:
             opp = game_obj.get_opponent(current)
             opp_val = game_obj.get_opponent_value(reward)
             enc = game_obj.get_encoded_state(next_state)
+
             history.append({
                 "step": step,
                 "player": current,

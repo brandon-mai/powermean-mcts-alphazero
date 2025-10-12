@@ -48,7 +48,7 @@ class ConnectFour(AbstractGame):
         elif result == "lose":
             reward = 0.0
         elif result == "draw":
-            reward = 0.0
+            reward = 0.5
         elif result == "not_ended":
             reward = 0.0
         else:
