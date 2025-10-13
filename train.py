@@ -1,17 +1,18 @@
 import math
+from alphazero.model import PongAtariResNet
 import torch
 
 torch.manual_seed(0)
 
-from games import ConnectFour
+from games import ConnectFour, PongAtari
 from alphazero import AlphaZero, ResNet
 from mcts import MCTS_Global_Parallel, MCTS_Local_Parallel, PUCT_Parallel
 
 def main():
-    game = ConnectFour()
+    game = PongAtari()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = ResNet(game, 9, 128, device)
+    model = PongAtariResNet(game, 9, 128, device)
 
     mtcs = PUCT_Parallel(
             game=game, 
