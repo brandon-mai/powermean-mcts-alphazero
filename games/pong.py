@@ -641,10 +641,8 @@ class PongAtari(AbstractGame):
         """Return the opponent player."""
         return -player
     
-    def get_opponent_value(self, value, player):
+    def get_opponent_value(self, value):
         """Return value from opponent's perspective."""
-        # If value is 1 (win), opponent gets 0 (loss)
-        # If value is 0, opponent also gets 0
         return 1 - value
     
     def change_perspective(self, state, player):
@@ -660,11 +658,23 @@ class PongAtari(AbstractGame):
         """
         Encode state for neural network.
         For RGB images (210, 160, 3), normalize to [0, 1] and transpose to (C, H, W).
+        Handles both single state and batch of states.
         """
-        # state is (210, 160, 3) in uint8 [0, 255]
-        # Normalize to [0, 1] and transpose to (3, 210, 160) for PyTorch
+        # state can be:
+        # - single: (210, 160, 3) in uint8 [0, 255]
+        # - batch: (batch_size, 210, 160, 3) in uint8 [0, 255]
+        
+        # Normalize to [0, 1]
         encoded = state.astype(np.float32) / 255.0
-        encoded = np.transpose(encoded, (2, 0, 1))  # (H, W, C) -> (C, H, W)
+        
+        # Handle batch vs single state
+        if len(state.shape) == 4:
+            # Batch: (batch_size, H, W, C) -> (batch_size, C, H, W)
+            encoded = np.transpose(encoded, (0, 3, 1, 2))
+        else:
+            # Single: (H, W, C) -> (C, H, W)
+            encoded = np.transpose(encoded, (2, 0, 1))
+        
         return encoded
     
     def __repr__(self):
