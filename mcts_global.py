@@ -75,7 +75,13 @@ class Node_Global:
  
 
 class MCTS_Global_Parallel:
-    """Global: Both players share the same Q and V values, playout value is negated for the opponent."""
+    """Global: Both players share the same Q and V values, playout value is negated for the opponent.
+    
+    Args:
+        game: The game object.
+        args: The arguments for MCTS.
+        model: The neural network model for policy and value prediction. Value prediction range: [-1, 1]
+    """
     def __init__(self, game, args, model):
         self.game = game
         self.args = args
