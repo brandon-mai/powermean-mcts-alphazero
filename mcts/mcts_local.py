@@ -43,7 +43,7 @@ class Node_Local:
             if ucb > best_ucb:
                 best_child = child
                 best_ucb = ucb
-                
+
         return best_child
     
     def get_ucb(self, child):
@@ -96,7 +96,6 @@ class Node_Local:
             self.parent.v_node_values[self.player_idx] = self.v_node_values[self.player_idx]
             self.parent.backpropagate(update_player)  
 
-
 class MCTS_Local_Parallel:
     """Local: Each player maximizes their own value and does not care of the opponents', no playout value is negated.
     
@@ -106,6 +105,7 @@ class MCTS_Local_Parallel:
         model: The neural network model for policy and value prediction. Value prediction range: [-1, 1]
     """
     def __init__(self, game, args, model):
+        self.name = "MCTS_Local_Parallel"
         self.game = game
         self.args = args
         self.model = model
