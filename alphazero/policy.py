@@ -102,7 +102,8 @@ class AlphaZero:
             self.optimizer.step()
 
             current_batch = batchIdx // self.batch_size + 1
-            print(f"Batch {current_batch}/{total_batches} | Batch size: {len(sample)} | Loss: {loss.item():.6f}")
+            if current_batch % 10 == 0:
+                print(f"Batch {current_batch}/{total_batches} | Batch size: {len(sample)} | Loss: {loss.item():.6f}")
 
         avg_loss = np.mean(batch_losses)
         print(f"Training completed.")
