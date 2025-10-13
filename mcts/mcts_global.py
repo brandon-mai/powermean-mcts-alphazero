@@ -68,7 +68,6 @@ class Node_Global:
             
     def backpropagate(self, value=None, immediate_reward=0):
         if value is not None:
-            value = (value + 1) / 2
             self.v_node_value = value
         else:
             power_sum = 0
@@ -94,7 +93,8 @@ class MCTS_Global_Parallel:
         args: The arguments for MCTS.
         model: The neural network model for policy and value prediction. Value prediction range: [-1, 1]
     """
-    def __init__(self, game, model, C=2, p=1, gamma=0.99, dirichlet_epsilon=0.25, dirichlet_alpha=0.3, action_size=None, num_searches=600):
+    def __init__(self, game, model, C=2, p=1.5, gamma=0.99, dirichlet_epsilon=0.25, dirichlet_alpha=0.3, action_size=None, num_searches=600):
+        self.name = "MCTS_Global_Parallel"
         self.game = game
         self.model = model
         self.C = C
@@ -177,4 +177,4 @@ class MCTS_Global_Parallel:
                 spg_policy /= np.sum(spg_policy)
 
                 node.expand(spg_policy)
-                node.backpropagate(spg_value)
+                node.backpropagate(value=(spg_value + 1) / 2)
