@@ -136,3 +136,4 @@ while True:
             print("It's a draw!")
         break
     player = connect4.get_opponent(player)
+
