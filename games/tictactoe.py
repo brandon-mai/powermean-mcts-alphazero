@@ -57,7 +57,7 @@ class TicTacToe(AbstractGame):
         return -player
 
     def get_opponent_value(self, value):
-        return -value
+        return 1.0 - value
 
     def change_perspective(self, state, player):
         return state * player
