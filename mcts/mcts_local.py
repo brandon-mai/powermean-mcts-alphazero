@@ -75,7 +75,6 @@ class Node_Local:
             return
         
         if value:
-            value = (value + 1) / 2
             self.v_node_values[self.player_idx] = value
         else:
             power_sum = 0
@@ -172,4 +171,4 @@ class MCTS_Local_Parallel:
                     spg_policy /= np.sum(spg_policy)
 
                 node.expand(spg_policy)
-                node.backpropagate(value=spg_value)
+                node.backpropagate(value=(spg_value + 1) / 2)

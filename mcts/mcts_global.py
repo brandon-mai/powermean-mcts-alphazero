@@ -68,7 +68,6 @@ class Node_Global:
             
     def backpropagate(self, value=None, immediate_reward=0):
         if value is not None:
-            value = (value + 1) / 2
             self.v_node_value = value
         else:
             power_sum = 0
@@ -178,4 +177,4 @@ class MCTS_Global_Parallel:
                 spg_policy /= np.sum(spg_policy)
 
                 node.expand(spg_policy)
-                node.backpropagate(spg_value)
+                node.backpropagate(value=(spg_value + 1) / 2)
