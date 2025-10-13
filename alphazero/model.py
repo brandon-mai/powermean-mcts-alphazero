@@ -1,26 +1,24 @@
-import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+
 class ResNet(nn.Module):
-    def __init__(self, game, device, value_range, args):
+    def __init__(self, game, num_resBlocks, num_hidden, device):
         super().__init__()
         
         self.device = device
-        self.value_range = value_range
-
         self.startBlock = nn.Sequential(
-            nn.Conv2d(3, args.num_hidden, kernel_size=3, padding=1),
-            nn.BatchNorm2d(args.num_hidden),
+            nn.Conv2d(3, num_hidden, kernel_size=3, padding=1),
+            nn.BatchNorm2d(num_hidden),
             nn.ReLU()
         )
         
         self.backBone = nn.ModuleList(
-            [ResBlock(args.num_hidden) for i in range(args.num_resBlocks)]
+            [ResBlock(num_hidden) for i in range(num_resBlocks)]
         )
         
         self.policyHead = nn.Sequential(
-            nn.Conv2d(args.num_hidden, 32, kernel_size=3, padding=1),
+            nn.Conv2d(num_hidden, 32, kernel_size=3, padding=1),
             nn.BatchNorm2d(32),
             nn.ReLU(),
             nn.Flatten(),
@@ -28,14 +26,14 @@ class ResNet(nn.Module):
         )
         
         self.valueHead = nn.Sequential(
-            nn.Conv2d(args.num_hidden, 3, kernel_size=3, padding=1),
+            nn.Conv2d(num_hidden, 3, kernel_size=3, padding=1),
             nn.BatchNorm2d(3),
             nn.ReLU(),
             nn.Flatten(),
             nn.Linear(3 * game.row_count * game.column_count, 1),
             nn.Tanh()
         )
-
+        
         self.to(device)
         
     def forward(self, x):
@@ -44,11 +42,6 @@ class ResNet(nn.Module):
             x = resBlock(x)
         policy = self.policyHead(x)
         value = self.valueHead(x)
-
-        # Scale value to the desired range
-        min_value, max_value = self.value_range
-        value = (value + 1) / 2 * (max_value - min_value) + min_value
-        
         return policy, value
         
         
@@ -67,3 +60,4 @@ class ResBlock(nn.Module):
         x += residual
         x = F.relu(x)
         return x
+

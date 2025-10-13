@@ -1,5 +1,5 @@
 import numpy as np
-from .abstract_game import AbstractGame
+from games.abstract_game import AbstractGame
 import math
 from dataclasses import dataclass
 import logging
