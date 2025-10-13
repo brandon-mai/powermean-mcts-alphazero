@@ -13,7 +13,6 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = ResNet(game, 9, 128, device)
     
-
     mtcs = MCTS_Global_Parallel(
         game=game, 
         model=model,

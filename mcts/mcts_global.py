@@ -116,6 +116,9 @@ class MCTS_Global_Parallel:
         for i, spg in enumerate(spGames):
             spg_policy = policy[i]
             valid_moves = self.game.get_valid_moves(states[i])
+            # create mask for valid moves
+            valid_moves = np.array([1 if j in valid_moves else 0 for j in range(self.game.action_size)])
+
             spg_policy *= valid_moves
             spg_policy /= np.sum(spg_policy)
 
@@ -167,6 +170,9 @@ class MCTS_Global_Parallel:
                 spg_policy, spg_value = policy[i], value[i]
 
                 valid_moves = self.game.get_valid_moves(node.state)
+                # create mask for valid moves
+                valid_moves = np.array([1 if j in valid_moves else 0 for j in range(self.game.action_size)])
+                
                 spg_policy *= valid_moves
                 spg_policy /= np.sum(spg_policy)
 

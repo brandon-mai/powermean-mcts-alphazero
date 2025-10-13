@@ -1,2 +1,2 @@
-from model import ResNet
-from alphazero import AlphaZero
+from alphazero.model import ResNet
+from alphazero.policy import AlphaZero

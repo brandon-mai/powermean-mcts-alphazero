@@ -1,5 +1,5 @@
 import numpy as np
-from abstract_game import AbstractGame
+from games.abstract_game import AbstractGame
 
 class TicTacToe(AbstractGame):
     def __init__(self):

@@ -1,2 +1,2 @@
-from connect4 import ConnectFour
-from tictactoe import TicTacToe
+from games.connect4 import ConnectFour
+from games.tictactoe import TicTacToe
