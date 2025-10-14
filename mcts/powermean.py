@@ -3,7 +3,7 @@ import math
 import torch
 
 
-class Node_Local:
+class Node:
     def __init__(self, game, state, player, C, p, gamma, parent=None, action_taken=None, prior=0, visit_count=0):
         self.game = game
         self.state = state
@@ -17,40 +17,40 @@ class Node_Local:
         self.p = p
         self.gamma = gamma
         
-        self.children = []
+        self.opponent_nodes = []
         self.visit_count = visit_count
         self.q_node_values = np.array([0, 0], dtype=np.float32)
         self.v_node_values = np.array([0, 0], dtype=np.float32)
 
     def is_fully_expanded(self):
-        return len(self.children) > 0
+        return len(self.opponent_nodes) > 0 
     
-    def select(self):
-        best_child = None
+    def select_opponent(self):
+        best_node = None
         best_ucb = -np.inf
         
-        for child in self.children:
-            ucb = self.get_ucb(child)
+        for node in self.opponent_nodes:
+            ucb = self.get_ucb(node)
             if ucb > best_ucb:
-                best_child = child
+                best_node = node
                 best_ucb = ucb
-        return best_child
+        return best_node
     
-    def get_ucb(self, child):
-        q_value = child.q_node_values[self.player_idx]
-        return q_value + self.C * (math.pow(self.visit_count, 0.25) / math.sqrt(child.visit_count + 1)) * child.prior
+    def get_ucb(self, node):
+        q_value = node.q_node_values[self.player_idx]
+        return q_value + self.C * (math.pow(self.visit_count, 0.25) / math.sqrt(node.visit_count)) * node.prior
     
     def expand(self, policy):
         for action, prob in enumerate(policy):
             if prob > 0:
-                child_state = self.state.copy()
-                child_state = self.game.get_next_state(child_state, action)
-                child_state = self.game.change_perspective(child_state, player=-1)
+                node_state = self.state.copy()
+                node_state = self.game.get_next_state(node_state, action)
+                node_state = self.game.change_perspective(node_state, player=-1)
 
-                child = Node_Local(
+                node = Node(
                     game=self.game,
-                    state=child_state,
-                    player=-self.player,
+                    state=node_state,
+                    player=self.game.get_opponent(self.player),
                     C=self.C,
                     p=self.p,
                     gamma=self.gamma,
@@ -58,19 +58,23 @@ class Node_Local:
                     action_taken=action,
                     prior=prob
                 )
-                self.children.append(child)
-        return child
+                self.opponent_nodes.append(node)
+        return node
     
-    def backpropagate(self, update_player, value=None, immediate_reward=0):
+    def backpropagate(self, update_player, final_reward=None, immediate_reward=0):
         if update_player != self.player and self.parent:
             self.parent.backpropagate(update_player)
             return
-        
-        if value is not None:
-            self.v_node_values[self.player_idx] = value
+
+        if final_reward is not None:
+            self.v_node_values[self.player_idx] = final_reward
         else:
+            children = [child for node in self.opponent_nodes for child in node.opponent_nodes]
+            if len(children) == 0:
+                raise ValueError("No children to propagate to")
+            
             power_sum = 0
-            for child in self.children:
+            for child in children:
                 weight = child.visit_count / (self.visit_count + 1)
                 powered = child.q_node_values[self.player_idx] ** self.p
                 contribution = weight * powered
@@ -83,19 +87,15 @@ class Node_Local:
                 + immediate_reward
                 + self.gamma * self.v_node_values[self.player_idx]
             ) / (self.visit_count + 1)
-
         self.visit_count += 1
         
         if self.parent:
-            self.parent.q_node_values[self.player_idx] = self.q_node_values[self.player_idx]
-            self.parent.v_node_values[self.player_idx] = self.v_node_values[self.player_idx]
             self.parent.backpropagate(update_player)
 
-
-class MCTS_Local_Parallel:
+class Stochastic_Powermean_MCTS:
     def __init__(self, game, model, C=1.41, p=1.5, gamma=0.95,
                  dirichlet_epsilon=0.25, dirichlet_alpha=0.3, num_searches=25):
-        self.name = "MCTS_Local_Parallel"
+        self.name = "Stochastic_Powermean_MCTS"
         self.game = game
         self.model = model
 
@@ -118,6 +118,7 @@ class MCTS_Local_Parallel:
         
         for i, spg in enumerate(spGames):
             spg_policy = policies[i]
+
             valid_moves = self.game.get_valid_moves(states[i])
             # create mask for valid moves
             valid_moves = np.array([1 if j in valid_moves else 0 for j in range(self.game.action_size)])
@@ -128,13 +129,13 @@ class MCTS_Local_Parallel:
             else:
                 spg_policy /= np.sum(spg_policy)
 
-            spg.root = Node_Local(
-                self.game, 
-                states[i], 
-                self.game.get_current_player(states[i]),
-                self.C,
-                self.p,
-                self.gamma,
+            spg.root = Node(
+                game=self.game, 
+                state=states[i], 
+                player=self.game.get_current_player(states[i]),
+                C=self.C,
+                p=self.p,
+                gamma=self.gamma,
                 visit_count=1
             )
             spg.root.expand(spg_policy)
@@ -145,14 +146,16 @@ class MCTS_Local_Parallel:
                 node = spg.root
 
                 while node.is_fully_expanded():
-                    node = node.select()
+                    node = node.select_opponent()
 
                 value, is_terminal = self.game.get_value_and_terminated(
-                    node.state, self.game.get_current_player(node.state)
+                    state=node.state, 
+                    player=self.game.get_current_player(node.state)
                 )
                 
                 if is_terminal:
-                    node.backpropagate(update_player=node.player, immediate_reward=value)
+                    node.backpropagate(update_player=node.player, final_reward=value)
+                    node.parent.backpropagate(update_player=node.parent.player, final_reward=self.game.get_opponent_value(value))
                 else:
                     spg.node = node
                     
@@ -169,6 +172,8 @@ class MCTS_Local_Parallel:
             for i, idx in enumerate(expandable_spGames):
                 node = spGames[idx].node
                 spg_policy, spg_value = policies[i], values[i]
+
+                spg_value = (spg_value + 1) / 2  # Normalize value to [0, 1]
                 
                 valid_moves = self.game.get_valid_moves(states[i])
                 # create mask for valid moves
@@ -181,4 +186,6 @@ class MCTS_Local_Parallel:
                     spg_policy /= np.sum(spg_policy)
 
                 node.expand(spg_policy)
-                node.backpropagate(update_player=node.player, value=(spg_value + 1) / 2)  # Normalize value to [0, 1]
+
+                node.backpropagate(update_player=node.player, final_reward=spg_value)  
+                node.parent.backpropagate(update_player=node.parent.player, final_reward=self.game.get_opponent_value(spg_value))

@@ -93,7 +93,7 @@ class MCTS_Global_Parallel:
         args: The arguments for MCTS.
         model: The neural network model for policy and value prediction. Value prediction range: [-1, 1]
     """
-    def __init__(self, game, model, C=2, p=1.5, gamma=0.99, dirichlet_epsilon=0.25, dirichlet_alpha=0.3, action_size=None, num_searches=600):
+    def __init__(self, game, model, C=2, p=1, gamma=0.99, dirichlet_epsilon=0.25, dirichlet_alpha=0.3, action_size=None, num_searches=600):
         self.name = "MCTS_Global_Parallel"
         self.game = game
         self.model = model
@@ -177,4 +177,4 @@ class MCTS_Global_Parallel:
                 spg_policy /= np.sum(spg_policy)
 
                 node.expand(spg_policy)
-                node.backpropagate(value=(spg_value + 1) / 2)
+                node.backpropagate(value=(spg_value + 1) / 2)  # Normalize value to [0, 1]
