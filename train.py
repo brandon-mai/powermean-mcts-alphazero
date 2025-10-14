@@ -5,7 +5,7 @@ torch.manual_seed(0)
 
 from games import ConnectFour
 from alphazero import AlphaZero, ResNet
-from mcts import PUCT, Stochastic_Powermean_MCTS
+from mcts import PUCT, Stochastic_Powermean_UCT
 
 def main():
     game = ConnectFour()
@@ -22,7 +22,7 @@ def main():
             num_searches=600
     )
 
-    # mtcs = Stochastic_Powermean_MCTS(
+    # mtcs = Stochastic_Powermean_UCT(
     #         game=game, 
     #         model=model, 
     #         C=1.41, 

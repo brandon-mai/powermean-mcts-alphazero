@@ -16,19 +16,19 @@ class Node:
         self.p = p
         self.gamma = gamma
         
-        self.opponent_nodes = []
+        self.children = [] # for compatibility purpose. Actually, this should be named opponent_nodes
         self.visit_count = visit_count
         self.q_node_values = np.array([0, 0], dtype=np.float32)
         self.v_node_values = np.array([0, 0], dtype=np.float32)
 
     def is_fully_expanded(self):
-        return len(self.opponent_nodes) > 0 
+        return len(self.children) > 0 
     
     def select_opponent(self):
         best_node = None
         best_ucb = -np.inf
         
-        for node in self.opponent_nodes:
+        for node in self.children:
             ucb = self.get_ucb(node)
             if ucb > best_ucb:
                 best_node = node
@@ -37,7 +37,7 @@ class Node:
     
     def get_ucb(self, node):
         q_value = node.q_node_values[self.player_idx]
-        return q_value + self.C * (math.pow(self.visit_count, 0.25) / math.sqrt(node.visit_count)) * node.prior
+        return q_value + self.C * (math.pow(self.visit_count, 0.25) / math.sqrt(node.visit_count + 1)) * node.prior
     
     def expand(self, policy):
         for action, prob in enumerate(policy):
@@ -57,7 +57,7 @@ class Node:
                     action_taken=action,
                     prior=prob
                 )
-                self.opponent_nodes.append(node)
+                self.children.append(node)
         return node
     
     def backpropagate(self, update_player, final_reward=None, immediate_reward=0):
@@ -68,16 +68,21 @@ class Node:
         if final_reward is not None:
             self.v_node_values[self.player_idx] = final_reward
         else:
-            children = [child for node in self.opponent_nodes for child in node.opponent_nodes]
-            if len(children) == 0:
-                raise ValueError("No children to propagate to")
+            children = [child for node in self.children for child in node.children if child.visit_count > 0]
             
             power_sum = 0
-            for child in children:
-                weight = child.visit_count / (self.visit_count + 1)
-                powered = child.q_node_values[self.player_idx] ** self.p
-                contribution = weight * powered
-                power_sum += contribution
+            if len(children) == 0:
+                for node in self.children:
+                    weight = node.visit_count / (self.visit_count + 1)
+                    powered = ((1 + self.gamma) * node.v_node_values[node.player_idx]) ** self.p
+                    contribution = weight * powered
+                    power_sum += contribution                    
+            else:            
+                for child in children:
+                    weight = child.visit_count / (self.visit_count + 1)
+                    powered = child.q_node_values[self.player_idx] ** self.p
+                    contribution = weight * powered
+                    power_sum += contribution
             self.v_node_values[self.player_idx] = power_sum ** (1.0 / self.p)
 
         if self.parent:
@@ -143,6 +148,7 @@ class Stochastic_Powermean_UCT:
             for spg in spGames:
                 spg.node = None
                 node = spg.root
+                
 
                 while node.is_fully_expanded():
                     node = node.select_opponent()
@@ -153,8 +159,9 @@ class Stochastic_Powermean_UCT:
                 )
                 
                 if is_terminal:
-                    node.backpropagate(update_player=node.player, final_reward=value)
-                    node.parent.backpropagate(update_player=node.parent.player, final_reward=self.game.get_opponent_value(value))
+                  node.backpropagate(update_player=node.player, final_reward=value)
+                  node.parent.backpropagate(update_player=node.parent.player, final_reward=self.game.get_opponent_value(value))
+                    
                 else:
                     spg.node = node
                     
@@ -185,6 +192,6 @@ class Stochastic_Powermean_UCT:
                     spg_policy /= np.sum(spg_policy)
 
                 node.expand(spg_policy)
-
                 node.backpropagate(update_player=node.player, final_reward=spg_value)  
+
                 node.parent.backpropagate(update_player=node.parent.player, final_reward=self.game.get_opponent_value(spg_value))

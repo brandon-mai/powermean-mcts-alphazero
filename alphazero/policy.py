@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 import torch.nn.functional as F
-import random
+import random, os
 
 class AlphaZero:
     def __init__(self, model, optimizer, game, mcts,
@@ -40,6 +40,7 @@ class AlphaZero:
 
                 for child in spg.root.children:
                     action_probs[child.action_taken] = child.visit_count
+
                 action_probs /= np.sum(action_probs)
 
                 spg.memory.append((spg.root.state, action_probs, player))
@@ -139,7 +140,8 @@ class AlphaZero:
                 print(f"--- Training epoch {epoch + 1}/{self.num_epochs} ---")
                 self.train(memory)
 
-            torch.save(self.model.state_dict(), f"/checkpoint/{self.mcts.name}_{self.game.name}_iteration_{iteration + 1}.pt")
+            os.makedirs("checkpoint", exist_ok=True)
+            torch.save(self.model.state_dict(), f"checkpoint/{self.mcts.name}_{self.game.name}_iteration_{iteration + 1}.pt")
             print(f"Model and optimizer checkpoints saved for iteration {iteration + 1}.")
 
         print("\n============================================================")
