@@ -66,7 +66,7 @@ class Node:
 
 class PUCT_Parallel:
     def __init__(self, game, model, C, dirichlet_epsilon, dirichlet_alpha, num_searches):
-        self.name = "PUCT_Parallel"
+        self.name = "PUCT"
         self.game = game
         self.model = model
         
