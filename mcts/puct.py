@@ -139,4 +139,4 @@ class PUCT_Parallel:
                 spg_policy /= np.sum(spg_policy)
 
                 node.expand(spg_policy)
-                node.backpropagate(value=(spg_value + 1) / 2)
+                node.backpropagate(value=(spg_value + 1) / 2)  # Normalize value to [0, 1]

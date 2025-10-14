@@ -27,7 +27,8 @@ class AlphaZero:
         
         spGames = [SPG(self.game) for _ in range(self.num_parallel_games)]
         total_moves = 0
-        
+        completed_games = 0
+
         while len(spGames) > 0:
             states = np.stack([spg.state for spg in spGames])
             neutral_states = self.game.change_perspective(states, player)
@@ -54,6 +55,7 @@ class AlphaZero:
                 
                 value, is_terminal = self.game.get_value_and_terminated(spg.state, action)
                 if is_terminal:
+                    completed_games += 1
                     for hist_neutral_state, hist_action_probs, hist_player in spg.memory:
                         hist_outcome = value if hist_player == player else self.game.get_opponent_value(value)
                         return_memory.append((
@@ -66,11 +68,16 @@ class AlphaZero:
             player = self.game.get_opponent(player)
             total_moves += 1
 
+            if total_moves % 10 == 0:
+                print(f"[Update] Total moves simulated so far: {total_moves} | "
+                    f"Remaining active games: {len(spGames)}")
+
         print(f"Self-play completed.")
         print(f"Total simulated moves: {total_moves}")
         print(f"Training samples generated: {len(return_memory)}")
         print("------------------------------------------------------------")
         return return_memory
+
                 
     def train(self, memory):
         print("------------------------------------------------------------")
