@@ -138,9 +138,8 @@ class AlphaZero:
             for epoch in range(self.num_epochs):
                 print(f"--- Training epoch {epoch + 1}/{self.num_epochs} ---")
                 self.train(memory)
-            
-            torch.save(self.model.state_dict(), f"{self.mcts.name}_{self.game}.pt")
-            torch.save(self.optimizer.state_dict(), f"optimizer_{iteration}_{self.game}.pt")
+
+            torch.save(self.model.state_dict(), f"/checkpoint/{self.mcts.name}_{self.game.name}_iteration_{iteration + 1}.pt")
             print(f"Model and optimizer checkpoints saved for iteration {iteration + 1}.")
 
         print("\n============================================================")
