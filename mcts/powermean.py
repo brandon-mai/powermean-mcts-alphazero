@@ -2,7 +2,6 @@ import numpy as np
 import math
 import torch
 
-
 class Node:
     def __init__(self, game, state, player, C, p, gamma, parent=None, action_taken=None, prior=0, visit_count=0):
         self.game = game
@@ -92,10 +91,10 @@ class Node:
         if self.parent:
             self.parent.backpropagate(update_player)
 
-class Stochastic_Powermean_MCTS:
+class Stochastic_Powermean_UCT:
     def __init__(self, game, model, C=1.41, p=1.5, gamma=0.95,
                  dirichlet_epsilon=0.25, dirichlet_alpha=0.3, num_searches=25):
-        self.name = "Stochastic_Powermean_MCTS"
+        self.name = "Stochastic_Powermean_UCT"
         self.game = game
         self.model = model
 

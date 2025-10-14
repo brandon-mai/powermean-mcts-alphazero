@@ -64,7 +64,7 @@ class Node:
         if self.parent is not None:
             self.parent.backpropagate(value)
 
-class PUCT_Parallel:
+class PUCT:
     def __init__(self, game, model, C, dirichlet_epsilon, dirichlet_alpha, num_searches):
         self.name = "PUCT"
         self.game = game
