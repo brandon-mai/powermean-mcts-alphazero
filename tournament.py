@@ -3,7 +3,7 @@ import numpy as np
 import itertools
 from games import ConnectFour
 from alphazero import ResNet
-from mcts import MCTS_Global_Parallel, MCTS_Local_Parallel, PUCT_Parallel
+from mcts import PUCT, Stochastic_Powermean_UCT
 
 @torch.no_grad()
 def play_game(game, first, second):
@@ -39,64 +39,46 @@ def run_tournament():
     game = ConnectFour()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    PUCT_CHECKPOINT = "/content/PUCT_Parallel_<games.connect4.ConnectFour object at 0x792db7c63b60>.pt"
-    MCTS_LOCAL_PARALLEL_CHECKPOINT = "/content/PUCT_Parallel_<games.connect4.ConnectFour object at 0x792db7c63b60>.pt"
-    MCTS_GLOBAL_PARALLEL_CHECKPOINT = "/content/PUCT_Parallel_<games.connect4.ConnectFour object at 0x792db7c63b60>.pt"
+    PUCT_CHECKPOINT = "/content/PUCT_Parallel_connect4_interations_8.pt"
+    STOCHASTIC_POWERMEAN_UCT_CHECKPOINT = "/content/Stochastic_Powermean_MCTS_<games.connect4.ConnectFour object at 0x792db7c63b60>.pt"
 
     puct_model = ResNet(game, 9, 128, device)
     puct_model.load_state_dict(torch.load(PUCT_CHECKPOINT, map_location=device))
     puct_model.eval()
     puct = {
         "name": "PUCT",
-        "mtcs": PUCT_Parallel(
+        "mtcs": PUCT(
             game=game, 
             model=puct_model, 
             C=1.41, 
             dirichlet_epsilon=0.25, 
             dirichlet_alpha=0.3, 
-            num_searches=25
+            num_searches=600
         ),
         "model": puct_model,
     }
 
-    mcts_local_model = ResNet(game, 9, 128, device)
-    mcts_local_model.load_state_dict(torch.load(MCTS_LOCAL_PARALLEL_CHECKPOINT, map_location=device))
-    mcts_local_model.eval()
-    mcts_local = {
-        "name": "MCTS_Local",
-        "mtcs": MCTS_Local_Parallel(
+    stochastic_powermean_uct_model= ResNet(game, 9, 128, device)
+    stochastic_powermean_uct_model.load_state_dict(torch.load(STOCHASTIC_POWERMEAN_UCT_CHECKPOINT, map_location=device))
+    stochastic_powermean_uct_model.eval()
+    stochastic_powermean_uct = {
+        "name": "Stochastic_Powermean_UCT",
+        "mtcs": Stochastic_Powermean_UCT(
             game=game, 
-            model=mcts_local_model, 
+            model=stochastic_powermean_uct_model, 
             C=1.41, 
-            p=1.5, 
+            p=1.2, 
             gamma=0.95, 
             dirichlet_epsilon=0.25, 
             dirichlet_alpha=0.3, 
-            num_searches=25
+            num_searches=600
         ),
-        "model": mcts_local_model,
+        "model": stochastic_powermean_uct_model,
     }
 
-    mcts_global_model = ResNet(game, 9, 128, device)
-    mcts_global_model.load_state_dict(torch.load(MCTS_GLOBAL_PARALLEL_CHECKPOINT, map_location=device))
-    mcts_global_model.eval()
-    mcts_global = {
-        "name": "MCTS_Global",
-        "mtcs": MCTS_Global_Parallel(
-            game=game, 
-            model=mcts_global_model, 
-            C=1.41, 
-            p=1.5,
-            dirichlet_epsilon=0.25, 
-            dirichlet_alpha=0.3, 
-            num_searches=25
-        ),
-        "model": mcts_global_model,
-    }
-
-    mcts_list = [puct, mcts_local, mcts_global]
+    mcts_list = [puct, stochastic_powermean_uct]
     results = {m["name"]: {"win": 0, "loss": 0, "draw": 0} for m in mcts_list}
-    num_games_per_pair = 5
+    num_games_per_pair = 50
 
     for m1, m2 in itertools.combinations(mcts_list, 2):
         print(f"\n=== {m1['name']} vs {m2['name']} ===")
