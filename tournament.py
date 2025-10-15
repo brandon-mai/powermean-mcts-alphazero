@@ -4,6 +4,7 @@ import itertools
 from games import ConnectFour
 from alphazero import ResNet
 from mcts import PUCT, Stochastic_Powermean_UCT
+import argparse
 
 @torch.no_grad()
 def play_game(game, first, second):
@@ -34,13 +35,13 @@ def play_game(game, first, second):
         current_player *= -1
 
 
-def run_tournament():
+def run_tournament(args):
     torch.manual_seed(0)
-    game = ConnectFour()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    game = ConnectFour()
 
-    PUCT_CHECKPOINT = "/content/PUCT_Parallel_connect4_interations_8.pt"
-    STOCHASTIC_POWERMEAN_UCT_CHECKPOINT = "/content/Stochastic_Powermean_MCTS_<games.connect4.ConnectFour object at 0x792db7c63b60>.pt"
+    PUCT_CHECKPOINT = args.puct_checkpoint
+    STOCHASTIC_POWERMEAN_UCT_CHECKPOINT = args.stochastic_powermean_uct_checkpoint
 
     puct_model = ResNet(game, 9, 128, device)
     puct_model.load_state_dict(torch.load(PUCT_CHECKPOINT, map_location=device))
@@ -113,5 +114,8 @@ def run_tournament():
         print(f"{name}: {record}")
 
 if __name__ == "__main__":
-    
-    run_tournament()
+    parser = argparse.ArgumentParser(description="Run MCTS tournament.")
+    parser.add_argument("--puct_checkpoint", type=str, required=True, help="Path to the PUCT model checkpoint.")
+    parser.add_argument("--stochastic_powermean_uct_checkpoint", type=str, required=True, help="Path to the Stochastic Powermean UCT model checkpoint.")
+    args = parser.parse_args()
+    run_tournament(args)
