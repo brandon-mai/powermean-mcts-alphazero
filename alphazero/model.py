@@ -2,6 +2,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch
 import numpy as np
+import numpy as np
 
 class ResNet(nn.Module):
     def __init__(self, game, num_resBlocks, num_hidden, device):
