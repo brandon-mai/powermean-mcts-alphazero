@@ -1,5 +1,5 @@
 import math
-from alphazero.model import PongAtariResNet, ResNet
+from alphazero.model import PongAtariResNet, ResNet, weights_init_normal
 import torch
 from games import PongAtari, ConnectFour, TicTacToe
 from alphazero import AlphaZero
@@ -22,6 +22,8 @@ def main(args):
             model = ResNet(game, 9, 64, device)
         else:
             raise ValueError(f"Unknown game: {args.game}")
+        
+        model.apply(weights_init_normal)
 
         mtcs = Stochastic_Powermean_UCT(
             game=game,
