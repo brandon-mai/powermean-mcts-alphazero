@@ -1,6 +1,7 @@
 import torch.nn as nn
 import torch.nn.functional as F
 import torch
+import numpy as np
 
 class ResNet(nn.Module):
     def __init__(self, game, num_resBlocks, num_hidden, device):
@@ -147,3 +148,41 @@ class PongAtariResNet(nn.Module):
             value = value.item()
             policy = torch.softmax(policy_logits, dim=1).squeeze(0).detach().cpu().tolist()
             return value, policy
+
+
+def weights_init_normal(m):
+        '''Takes in a module and initializes all linear layers with weight
+           values taken from a normal distribution.'''
+
+        classname = m.__class__.__name__
+        # for every Linear layer in a model
+        if classname.find('Linear') != -1:
+            y = m.in_features
+        # m.weight.data shoud be taken from a normal distribution
+            m.weight.data.normal_(0.0,1/np.sqrt(y))
+        # m.bias.data should be 0
+            m.bias.data.fill_(0)
+
+
+def print_weight_stats(model, name):
+    print(f"--- {name} ---")
+    for n, p in model.named_parameters():
+        if p.requires_grad:
+            print(f"{n}: mean={p.data.mean():.4f}, std={p.data.std():.4f}, shape={tuple(p.shape)}")
+
+
+if __name__ == "__main__":
+    class DummyGame:
+        row_count = 6
+        column_count = 7
+        action_size = 7
+        def get_encoded_state(self, state):
+            return torch.zeros(6, 7)
+
+    device = 'cpu'
+    game = DummyGame()
+
+    # Test ResNet
+    resnet = ResNet(game, num_resBlocks=9, num_hidden=128, device=device)
+    resnet.apply(weights_init_normal)
+    print_weight_stats(resnet, "ResNet")
