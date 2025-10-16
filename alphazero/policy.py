@@ -101,8 +101,13 @@ class AlphaZero:
             
             policy_loss = F.cross_entropy(out_policy, policy_targets)
             value_loss = F.mse_loss(out_value, value_targets)
+            l2_weight = 1e-4
+            l2_loss = 0.0
+            for name, param in self.model.named_parameters():
+                if param.requires_grad and not any(x in name for x in ['bias', 'beta']):
+                    l2_loss += torch.sum(param.pow(2))
             
-            loss = policy_loss + value_loss
+            loss = policy_loss + value_loss + l2_weight * l2_loss
             batch_losses.append(loss.item())
             
             self.optimizer.zero_grad()
