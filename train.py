@@ -23,17 +23,25 @@ def main(args):
         else:
             raise ValueError(f"Unknown game: {args.game}")
 
-        mtcs = Stochastic_Powermean_UCT(
-            game=game,
-            model=model,
-            C=args.C,
-            p=args.p,
-            gamma=args.gamma,
-            dirichlet_epsilon=args.dirichlet_epsilon,
-            dirichlet_alpha=args.dirichlet_alpha,
-            num_searches=args.num_searches
+        # mtcs = Stochastic_Powermean_UCT(
+        #     game=game,
+        #     model=model,
+        #     C=args.C,
+        #     p=args.p,
+        #     gamma=args.gamma,
+        #     dirichlet_epsilon=args.dirichlet_epsilon,
+        #     dirichlet_alpha=args.dirichlet_alpha,
+        #     num_searches=args.num_searches
+        # )
+        mtcs = PUCT(
+            game=game, 
+            model=model, 
+            C=1.41, 
+            dirichlet_epsilon=0.25, 
+            dirichlet_alpha=0.3, 
+            num_searches=600
         )
-
+        
         alphaZero = AlphaZero(
             model=model,
             optimizer=torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay),
@@ -55,14 +63,14 @@ if __name__ == "__main__":
     parser.add_argument("--game", type=str, choices=["pong", "connect4", "tictactoe"], default="connect4", help="Select the game to train on")
     
     # Training parameters
-    parser.add_argument("--num_parallel_games", type=int, default=300, help="Number of parallel games for MCTS and AlphaZero")
-    parser.add_argument("--num_iterations", type=int, default=8, help="Number of AlphaZero iterations")
-    parser.add_argument("--num_selfPlay_iterations", type=int, default=300, help="Number of self-play games per AlphaZero iteration")
+    parser.add_argument("--num_parallel_games", type=int, default=100, help="Number of parallel games for MCTS and AlphaZero")
+    parser.add_argument("--num_iterations", type=int, default=10, help="Number of AlphaZero iterations")
+    parser.add_argument("--num_selfPlay_iterations", type=int, default=500, help="Number of self-play games per AlphaZero iteration")
     parser.add_argument("--batch_size", type=int, default=128, help="Batch size for training")
-    parser.add_argument("--num_epochs", type=int, default=4, help="Number of epochs per iteration")
+    parser.add_argument("--num_epochs", type=int, default=5, help="Number of epochs per iteration")
     
     # MCTS parameters
-    parser.add_argument("--num_searches", type=int, default=100, help="Number of MCTS searches")
+    parser.add_argument("--num_searches", type=int, default=600, help="Number of MCTS searches")
     parser.add_argument("--temperature", type=float, default=1.25, help="Temperature for action selection")
     parser.add_argument("--lr", type=float, default=0.001, help="Learning rate for optimizer")
     parser.add_argument("--weight_decay", type=float, default=0.0001, help="Weight decay for optimizer")

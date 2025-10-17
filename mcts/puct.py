@@ -108,7 +108,7 @@ class PUCT:
                 while node.is_fully_expanded():
                     node = node.select()
 
-                value, is_terminal = self.game.get_value_and_terminated(node.state, node.action_taken)
+                value, is_terminal = self.game.get_value_and_terminated(node.state, node.game.get_current_player(node.state))
                 value = self.game.get_opponent_value(value)
                 
                 if is_terminal:
