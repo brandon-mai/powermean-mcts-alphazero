@@ -1,5 +1,10 @@
-import torch, itertools, argparse, logging, os
+import torch, itertools, argparse, logging, os, sys
 import numpy as np
+
+# sys.path.append('/content/powermean_mcts_alphazero/')
+# sys.path.append('/content/powermean_mcts_alphazero/games')
+# sys.path.append('/content/powermean_mcts_alphazero/alphazero')
+# sys.path.append('/content/powermean_mcts_alphazero/mcts')
 
 from games import ConnectFour
 from alphazero import ResNet, SPG
@@ -48,9 +53,9 @@ def play_game(game, first, second, num_games_parallel, temperature, logger=None)
         neutral_states = game.change_perspective(states, player)
 
         if player == 1:
-            first["mtcs"].search(neutral_states, spGames)
+            first["mcts"].search(neutral_states, spGames)
         else:
-            second["mtcs"].search(neutral_states, spGames)
+            second["mcts"].search(neutral_states, spGames)
         
         for i in range(len(spGames))[::-1]:
             spg = spGames[i]
@@ -117,7 +122,7 @@ def run_tournament(args):
     if args.mcts_global:
         mcts_global = {
             "name": "MCTS_Global",
-            "mtcs": MCTS_Global_Parallel(
+            "mcts": MCTS_Global_Parallel(
                 game=game, 
                 model=model, 
                 C=args.C, 
@@ -134,7 +139,7 @@ def run_tournament(args):
     if args.mcts_local:
         mcts_local = {
             "name": "MCTS_Local",
-            "mtcs": MCTS_Local_Parallel(
+            "mcts": MCTS_Local_Parallel(
                 game=game, 
                 model=model, 
                 C=args.C, 
@@ -151,7 +156,7 @@ def run_tournament(args):
     if args.stochastic_powermean_uct_new:
         spm_uct_new = {
             "name": "Stochastic_Powermean_UCT_New",
-            "mtcs": Stochastic_Powermean_UCT_New(
+            "mcts": Stochastic_Powermean_UCT_New(
                 game=game, 
                 model=model, 
                 C=args.C, 
@@ -168,7 +173,7 @@ def run_tournament(args):
     if args.stochastic_powermean_uct:
         spm_uct = {
             "name": "Stochastic_Powermean_UCT",
-            "mtcs": Stochastic_Powermean_UCT(
+            "mcts": Stochastic_Powermean_UCT(
                 game=game, 
                 model=model, 
                 C=args.C, 
@@ -185,7 +190,7 @@ def run_tournament(args):
     if args.puct:
         puct = {
             "name": "PUCT",
-            "mtcs": PUCT(
+            "mcts": PUCT(
                 game=game, 
                 model=model, 
                 C=args.C, 
@@ -209,8 +214,8 @@ def run_tournament(args):
         logger.info(f"MATCHUP: {m1['name']} vs {m2['name']}")
         logger.info(f"{'=' * 70}")
 
-        for batch_idx in range(num_games_per_pair / args.num_games_parallel):
-            logger.info(f"\n--- Round {batch_idx + 1}/{num_games_per_pair / args.num_games_parallel} ---")
+        for batch_idx in range(num_games_per_pair // args.num_games_parallel):
+            logger.info(f"\n--- Round {batch_idx + 1}/{num_games_per_pair // args.num_games_parallel} ---")
             logger.info(f"Game 1: {m1['name']} (Player 1) vs {m2['name']} (Player 2)")
             result = play_game(game, m1, m2, args.num_games_parallel, args.temperature, logger)
             
@@ -270,15 +275,13 @@ if __name__ == "__main__":
     parser.add_argument("--num_games_parallel", type=int, default=10, help="Number of parallel games to run.")
     parser.add_argument("--temperature", type=float, default=1.25, help="Temperature parameter for MCTS.")
 
-    parser.add_argument("--mcts_global", type=bool, default=False, help="Whether or not include `MCTS_Global_Parallel` class to tournament.")
-    parser.add_argument("--mcts_local", type=bool, required=True, help="Whether or not include `MCTS_Local_Parallel` class to tournament.")
-    parser.add_argument("--stochastic_powermean_uct_new", type=bool, required=True, help="Whether or not include `Stochastic_Powermean_UCT_New` class to tournament.")
-    parser.add_argument("--stochastic_powermean_uct", type=bool, required=True, help="Whether or not include `Stochastic_Powermean_UCT` class to tournament.")
-    parser.add_argument("--puct", type=bool, required=True, help="Whether or not include `PUCT` class to tournament.")
+    parser.add_argument("--mcts_global", action='store_true', help="Include `MCTS_Global_Parallel` class to tournament.")
+    parser.add_argument("--mcts_local", action='store_true', help="Include `MCTS_Local_Parallel` class to tournament.")
+    parser.add_argument("--stochastic_powermean_uct_new", action='store_true', help="Include `Stochastic_Powermean_UCT_New` class to tournament.")
+    parser.add_argument("--stochastic_powermean_uct", action='store_true', help="Include `Stochastic_Powermean_UCT` class to tournament.")
+    parser.add_argument("--puct", action='store_true', help="Include `PUCT` class to tournament.")
 
     parser.add_argument("--log_file", type=str, default="tournament.log", help="Path to the log file.")
 
     args = parser.parse_args()
     run_tournament(args)
-
-    

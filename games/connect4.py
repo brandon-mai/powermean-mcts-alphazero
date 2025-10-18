@@ -111,6 +111,15 @@ class ConnectFour(AbstractGame):
         
         return encoded_state
 
+    def render(self, state):
+        symbols = {1: 'X', -1: 'O', 0: ' '}
+        print("\nBoard:")
+        for r in range(self.row_count):
+            print(" | ".join(symbols[int(x)] for x in state[r]))
+            if r < self.row_count - 1:
+                print("-" * (self.column_count * 4 - 1))
+        print()
+
     def _is_win(self, state, row, column, player):
         def count(offset_row, offset_column):
             for i in range(1, self.in_a_row):
@@ -131,5 +140,6 @@ class ConnectFour(AbstractGame):
             or (count(1, 1) + count(-1, -1)) >= self.in_a_row - 1 # top left diagonal
             or (count(1, -1) + count(-1, 1)) >= self.in_a_row - 1 # top right diagonal
         )
+
 
 
