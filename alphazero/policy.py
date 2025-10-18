@@ -53,7 +53,7 @@ class AlphaZero:
                 
                 action = np.random.choice(self.game.action_size, p=temperature_action_probs)
                 spg.state = self.game.get_next_state(spg.state, action)
-                print(action, player, spg.state)
+                # print(action, player, spg.state)
                 value, is_terminal = self.game.get_value_and_terminated(spg.state, player)
                 if is_terminal:
                     completed_games += 1

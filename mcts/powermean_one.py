@@ -18,8 +18,8 @@ class Node:
         
         self.children = [] # for compatibility purpose. Actually, this should be named opponent_nodes
         self.visit_count = visit_count
-        self.q_node_values = np.array([0, 0], dtype=np.float32)
-        self.v_node_values = np.array([0, 0], dtype=np.float32)
+        self.q_node_values = 0
+        self.v_node_values = 0
 
     def is_fully_expanded(self):
         return len(self.children) > 0 
@@ -36,7 +36,7 @@ class Node:
         return best_node
     
     def get_ucb(self, node):
-        q_value = node.q_node_values[self.player_idx]
+        q_value = node.q_node_values
         return q_value + self.C * (math.pow(self.visit_count, 0.25) / math.sqrt(node.visit_count + 1)) * node.prior
     
     def expand(self, policy):
@@ -66,7 +66,7 @@ class Node:
             return
 
         if final_reward is not None:
-            self.v_node_values[self.player_idx] = final_reward
+            self.v_node_values = final_reward
         else:
             children = [child for node in self.children for child in node.children if child.visit_count > 0]
             
@@ -74,32 +74,32 @@ class Node:
             if len(children) == 0:
                 for node in self.children:
                     weight = node.visit_count / (self.visit_count + 1)
-                    powered = ((1 + self.gamma) * node.v_node_values[node.player_idx]) ** self.p
+                    powered = ((1 + self.gamma) * node.v_node_values) ** self.p
                     contribution = weight * powered
                     power_sum += contribution                    
             else:            
                 for child in children:
                     weight = child.visit_count / (self.visit_count + 1)
-                    powered = child.q_node_values[self.player_idx] ** self.p
+                    powered = child.q_node_values ** self.p
                     contribution = weight * powered
                     power_sum += contribution
-            self.v_node_values[self.player_idx] = power_sum ** (1.0 / self.p)
+            self.v_node_values = power_sum ** (1.0 / self.p)
 
         if self.parent:
             if final_reward is not None:
-                self.q_node_values[self.player_idx] = self.q_node_values[self.player_idx] + final_reward
+                self.q_node_values = self.q_node_values + final_reward
             else:
-                self.q_node_values[self.player_idx] = (
-                    self.q_node_values[self.player_idx] * self.visit_count
+                self.q_node_values = (
+                    self.q_node_values * self.visit_count
                     + immediate_reward
-                    + self.gamma * self.v_node_values[self.player_idx]
+                    + self.gamma * self.v_node_values
                 ) / (self.visit_count + 1)
         self.visit_count += 1
         
         if self.parent:
             self.parent.backpropagate(update_player)
 
-class Stochastic_Powermean_UCT:
+class Stochastic_Powermean_UCT_New:
     def __init__(self, game, model, C=1.41, p=1.5, gamma=0.95,
                  dirichlet_epsilon=0.25, dirichlet_alpha=0.3, num_searches=25):
         self.name = "Stochastic_Powermean_UCT"
