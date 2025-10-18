@@ -1,177 +1,204 @@
-import torch
+import torch, itertools, argparse, logging, os
 import numpy as np
-import itertools
+
 from games import ConnectFour
-from alphazero import ResNet
-from mcts import PUCT, Stochastic_Powermean_UCT
-import argparse
-import logging
-from datetime import datetime
-import os
+from alphazero import ResNet, SPG
+from mcts import MCTS_Global_Parallel, MCTS_Local_Parallel, \
+    Stochastic_Powermean_UCT_New, Stochastic_Powermean_UCT, PUCT 
 
+def setup_logger(path):
+    os.makedirs(os.path.dirname(path), exist_ok=True) if os.path.dirname(path) else None
 
-def setup_logger(log_dir="logs"):
-    """
-    Thiết lập logger để ghi kết quả vào file
-    """
-    # Tạo thư mục logs nếu chưa có
-    if not os.path.exists(log_dir):
-        os.makedirs(log_dir)
-    
-    # Tạo tên file log với timestamp
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_file = os.path.join(log_dir, f"tournament_{timestamp}.log")
-    
-    # Cấu hình logger
     logger = logging.getLogger("tournament")
     logger.setLevel(logging.INFO)
-    
-    # Xóa các handler cũ nếu có
+
     if logger.hasHandlers():
         logger.handlers.clear()
-    
-    # File handler - ghi vào file
-    file_handler = logging.FileHandler(log_file, encoding='utf-8')
-    file_handler.setLevel(logging.INFO)
-    
-    # Console handler - hiển thị trên màn hình
+
+    file_handler = logging.FileHandler(path, encoding='utf-8')
     console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.INFO)
-    
-    # Định dạng log
-    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+
+    formatter = logging.Formatter('%(message)s')
     file_handler.setFormatter(formatter)
     console_handler.setFormatter(formatter)
-    
+
     logger.addHandler(file_handler)
     logger.addHandler(console_handler)
-    
-    logger.info(f"=== Logger initialized. Log file: {log_file} ===")
-    
+
     return logger
 
 @torch.no_grad()
-def play_game(game, first, second, logger=None):
+def play_game(game, first, second, num_games_parallel, temperature, logger=None):
     if logger:
         logger.info("=" * 50)
-        logger.info("NEW GAME_dafix")
+        logger.info("NEW GAME STARTED")
         logger.info(f"Player 1: {first['name']}")
         logger.info(f"Player 2: {second['name']}")
     
-    state = game.get_initial_state()
-    current_player = 1
-    move_count = 0
-    debug_state = state.copy()
-    while True:
-        if current_player == 1:
-            policy, _ = first["mtcs"].model(
-                torch.tensor(game.get_encoded_state(np.stack([state])), device=first["model"].device)
-            )
-        else:
-            policy, _ = second["mtcs"].model(
-                torch.tensor(game.get_encoded_state(np.stack([state])), device=second["model"].device)
-            )
+    result = {
+        "first_win": 0,
+        "second_win": 0,
+        "draw": 0
+    }
 
-        policy = torch.softmax(policy, dim=1).cpu().numpy()[0]
-        valid_moves = game.get_valid_moves(state)
-        valid_moves = np.array([1 if j in valid_moves else 0 for j in range(game.action_size)])
-        policy *= valid_moves
-        policy = policy / policy.sum() if policy.sum() > 0 else valid_moves / valid_moves.sum()
+    player = 1
+    spGames = [SPG(game) for _ in range(num_games_parallel)]
+    while len(spGames) > 0:
+        states = np.stack([spg.state for spg in spGames])
+        neutral_states = game.change_perspective(states, player)
 
-        action = int(torch.multinomial(torch.tensor(policy), 1).item())
-        state = game.get_next_state(state, action)
-        if(current_player == 1):
-            debug_state = state.copy()
+        if player == 1:
+            first["mtcs"].search(neutral_states, spGames)
         else:
-            debug_state = game.change_perspective(state, player=-1)
+            second["mtcs"].search(neutral_states, spGames)
+        
+        for i in range(len(spGames))[::-1]:
+            spg = spGames[i]
+            action_probs = np.zeros(game.action_size)
             
-        move_count += 1
-        current_player_name = first['name'] if current_player == 1 else second['name']
-        
-        # if logger:
-        #     logger.info(f"Move {move_count} - {current_player_name} plays action: {action}")
-        #     # logger.info(f"state: \n {debug_state}")
-        
-        win, done = game.get_value_and_terminated(state, current_player)
-        # logger.info(f"win: {win} - done: {done}")
-        if done:
-            if logger:
-                logger.info(f"debug_state: \n {debug_state}")
-                if win == 1:
-                    logger.info(f"Game Over! Winner: {current_player_name}")
-                elif win == 0.5:
-                    logger.info("Game Over! Draw")
-                elif win == 0:
-                    opponent_name = second['name'] if current_player == 1 else first['name']
-                    logger.info(f"Game Over! Winner: {opponent_name}")
+            for child in spg.root.children:
+                action_probs[child.action_taken] = child.visit_count
+            action_probs /= np.sum(action_probs)
+
+            temperature_action_probs = action_probs ** (1 / temperature)
+            if np.sum(temperature_action_probs) == 0:
+                temperature_action_probs = np.ones_like(temperature_action_probs) / len(temperature_action_probs)
+            else:
+                temperature_action_probs /= np.sum(temperature_action_probs)
             
-            if(win == 1):
-                return current_player
-            elif win == 0.5:
-                return 0
-            elif win == 0:
-                return -current_player
-        
-        state = game.change_perspective(state, player=-1)
-        current_player *= -1
-    
+            action = np.random.choice(game.action_size, p=temperature_action_probs)
+            spg.state = game.get_next_state(spg.state, action)
+
+            value, is_terminal = game.get_value_and_terminated(spg.state, player)
+            if is_terminal:
+                if (player == 1):
+                    if value == 1:
+                        result["first_win"] += 1
+                    elif value == -1:
+                        result["second_win"] += 1
+                    else:
+                        result["draw"] += 1
+                else:
+                    if value == 1:
+                        result["second_win"] += 1
+                    elif value == -1:
+                        result["first_win"] += 1
+                    else:
+                        result["draw"] += 1
+                del spGames[i]
+        player = game.get_opponent(player)  
+
+    if logger:
+        logger.info("GAME ENDED")
+        logger.info(f"Result: Player 1 wins: {result['first_win']}, Player 2 wins: {result['second_win']}, Draws: {result['draw']}")
+        logger.info("=" * 50)
+    return result              
 
 def run_tournament(args):
-    # Khởi tạo logger
-    logger = setup_logger()
+    logger = setup_logger(path=args.log_file)
     
-    torch.manual_seed(np.random.randint(0, 1000000))
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     game = ConnectFour()
 
-    PUCT_CHECKPOINT = args.puct_checkpoint
-    STOCHASTIC_POWERMEAN_UCT_CHECKPOINT = args.stochastic_powermean_uct_checkpoint
+    MODEL_CHECKPOINT = args.model_checkpoint
 
     logger.info("=" * 70)
     logger.info("TOURNAMENT CONFIGURATION")
     logger.info("=" * 70)
     logger.info(f"Device: {device}")
-    logger.info(f"Game: ConnectFour")
-    logger.info(f"PUCT checkpoint: {PUCT_CHECKPOINT}")
-    logger.info(f"Stochastic Powermean UCT checkpoint: {STOCHASTIC_POWERMEAN_UCT_CHECKPOINT}")
+    logger.info(f"Game: {game.name}")
+    logger.info(f"Model checkpoint: {MODEL_CHECKPOINT}")
 
-    puct_model = ResNet(game, 9, 128, device)
-    puct_model.load_state_dict(torch.load(PUCT_CHECKPOINT, map_location=device))
-    puct_model.eval()
-    puct = {
-        "name": "PUCT",
-        "mtcs": PUCT(
-            game=game, 
-            model=puct_model, 
-            C=1.41, 
-            dirichlet_epsilon=0.25, 
-            dirichlet_alpha=0.3, 
-            num_searches=600
-        ),
-        "model": puct_model,
-    }
+    model = ResNet(game, 9, 128, device)
+    model.load_state_dict(torch.load(MODEL_CHECKPOINT, map_location=device))
+    model.eval()
 
-    stochastic_powermean_uct_model= ResNet(game, 9, 128, device)
-    stochastic_powermean_uct_model.load_state_dict(torch.load(STOCHASTIC_POWERMEAN_UCT_CHECKPOINT, map_location=device))
-    stochastic_powermean_uct_model.eval()
-    stochastic_powermean_uct = {
-        "name": "Stochastic_Powermean_UCT",
-        "mtcs": Stochastic_Powermean_UCT(
-            game=game, 
-            model=stochastic_powermean_uct_model, 
-            C=1.41, 
-            p=1.2, 
-            gamma=0.95, 
-            dirichlet_epsilon=0.25, 
-            dirichlet_alpha=0.3, 
-            num_searches=600
-        ),
-        "model": stochastic_powermean_uct_model,
-    }
+    mcts_list = []
+    if args.mcts_global:
+        mcts_global = {
+            "name": "MCTS_Global",
+            "mtcs": MCTS_Global_Parallel(
+                game=game, 
+                model=model, 
+                C=args.C, 
+                p=args.p, 
+                gamma=args.gamma, 
+                dirichlet_epsilon=args.dirichlet_epsilon, 
+                dirichlet_alpha=args.dirichlet_alpha, 
+                num_searches=args.num_searches
+            ),
+            "model": model,
+        }
+        mcts_list.append(mcts_global)
+    
+    if args.mcts_local:
+        mcts_local = {
+            "name": "MCTS_Local",
+            "mtcs": MCTS_Local_Parallel(
+                game=game, 
+                model=model, 
+                C=args.C, 
+                p=args.p, 
+                gamma=args.gamma, 
+                dirichlet_epsilon=args.dirichlet_epsilon, 
+                dirichlet_alpha=args.dirichlet_alpha, 
+                num_searches=args.num_searches
+            ),
+            "model": model,
+        }
+        mcts_list.append(mcts_local)
+    
+    if args.stochastic_powermean_uct_new:
+        spm_uct_new = {
+            "name": "Stochastic_Powermean_UCT_New",
+            "mtcs": Stochastic_Powermean_UCT_New(
+                game=game, 
+                model=model, 
+                C=args.C, 
+                p=args.p, 
+                gamma=args.gamma, 
+                dirichlet_epsilon=args.dirichlet_epsilon, 
+                dirichlet_alpha=args.dirichlet_alpha, 
+                num_searches=args.num_searches
+            ),
+            "model": model,
+        }
+        mcts_list.append(spm_uct_new)
 
-    mcts_list = [puct, stochastic_powermean_uct]
+    if args.stochastic_powermean_uct:
+        spm_uct = {
+            "name": "Stochastic_Powermean_UCT",
+            "mtcs": Stochastic_Powermean_UCT(
+                game=game, 
+                model=model, 
+                C=args.C, 
+                p=args.p, 
+                gamma=args.gamma, 
+                dirichlet_epsilon=args.dirichlet_epsilon, 
+                dirichlet_alpha=args.dirichlet_alpha, 
+                num_searches=args.num_searches
+            ),
+            "model": model,
+        }
+        mcts_list.append(spm_uct)
+
+    if args.puct:
+        puct = {
+            "name": "PUCT",
+            "mtcs": PUCT(
+                game=game, 
+                model=model, 
+                C=args.C, 
+                dirichlet_epsilon=args.dirichlet_epsilon, 
+                dirichlet_alpha=args.dirichlet_alpha, 
+                num_searches=args.num_searches
+            ),
+            "model": model,
+        }
+        mcts_list.append(puct)
+
     results = {m["name"]: {"win": 0, "loss": 0, "draw": 0} for m in mcts_list}
-    num_games_per_pair = 500
+    num_games_per_pair = args.num_games_per_pair
 
     logger.info("=" * 70)
     logger.info("TOURNAMENT START")
@@ -182,39 +209,29 @@ def run_tournament(args):
         logger.info(f"MATCHUP: {m1['name']} vs {m2['name']}")
         logger.info(f"{'=' * 70}")
 
-        for game_idx in range(num_games_per_pair):
-            logger.info(f"\n--- Round {game_idx + 1}/{num_games_per_pair} ---")
+        for batch_idx in range(num_games_per_pair / args.num_games_parallel):
+            logger.info(f"\n--- Round {batch_idx + 1}/{num_games_per_pair / args.num_games_parallel} ---")
             logger.info(f"Game 1: {m1['name']} (Player 1) vs {m2['name']} (Player 2)")
-            result = play_game(game, m1, m2, logger)
+            result = play_game(game, m1, m2, args.num_games_parallel, args.temperature, logger)
             
-            if result == 1:
-                results[m1["name"]]["win"] += 1
-                results[m2["name"]]["loss"] += 1
-                logger.info(f"Result: {m1['name']} wins!")
-            elif result == -1:
-                results[m1["name"]]["loss"] += 1
-                results[m2["name"]]["win"] += 1
-                logger.info(f"Result: {m2['name']} wins!")
-            else:
-                results[m1["name"]]["draw"] += 1
-                results[m2["name"]]["draw"] += 1
-                logger.info("Result: Draw!")
+            results[m1["name"]]["win"] += result["first_win"]
+            results[m1["name"]]["loss"] += result["second_win"]
+            results[m1["name"]]["draw"] += result["draw"]
+
+            results[m2["name"]]["win"] += result["second_win"]
+            results[m2["name"]]["loss"] += result["first_win"]
+            results[m2["name"]]["draw"] += result["draw"]
 
             logger.info(f"\nGame 2: {m2['name']} (Player 1) vs {m1['name']} (Player 2)")
-            result = play_game(game, m2, m1, logger)
-            
-            if result == 1:
-                results[m2["name"]]["win"] += 1
-                results[m1["name"]]["loss"] += 1
-                logger.info(f"Result: {m2['name']} wins!")
-            elif result == -1:
-                results[m2["name"]]["loss"] += 1
-                results[m1["name"]]["win"] += 1
-                logger.info(f"Result: {m1['name']} wins!")
-            else:
-                results[m2["name"]]["draw"] += 1
-                results[m1["name"]]["draw"] += 1
-                logger.info("Result: Draw!")
+            result = play_game(game, m2, m1, args.num_games_parallel, args.temperature, logger)
+
+            results[m2["name"]]["win"] += result["first_win"]
+            results[m2["name"]]["loss"] += result["second_win"]
+            results[m2["name"]]["draw"] += result["draw"]
+
+            results[m1["name"]]["win"] += result["second_win"]
+            results[m1["name"]]["loss"] += result["first_win"]
+            results[m1["name"]]["draw"] += result["draw"]
 
         logger.info(f"\nFinished matchup: {m1['name']} vs {m2['name']}")
         logger.info(f"Current standings:")
@@ -240,8 +257,28 @@ def run_tournament(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run MCTS tournament.")
-    parser.add_argument("--puct_checkpoint", type=str, required=True, help="Path to the PUCT model checkpoint.")
-    parser.add_argument("--stochastic_powermean_uct_checkpoint", type=str, required=True, help="Path to the Stochastic Powermean UCT model checkpoint.")
+    parser.add_argument("--model_checkpoint", type=str, required=True, help="Path to the model checkpoint.")
+    
+    parser.add_argument("--num_searches", type=int, default=600, help="Number of MCTS searches per move.")
+    parser.add_argument("--C", type=float, default=1.41, help="Exploration constant C for MCTS.")
+    parser.add_argument("--p", type=float, default=1.5, help="Exploration constant p for MCTS.")
+    parser.add_argument("--gamma", type=float, default=0.95, help="Discount factor gamma for MCTS.")
+    parser.add_argument("--dirichlet_epsilon", type=float, default=0.25, help="Dirichlet noise epsilon for MCTS.")
+    parser.add_argument("--dirichlet_alpha", type=float, default=0.3, help="Dirichlet noise alpha for MCTS.")
+
+    parser.add_argument("--num_games_per_pair", type=int, default=500, help="Number of games per MCTS pair in the tournament.")
+    parser.add_argument("--num_games_parallel", type=int, default=10, help="Number of parallel games to run.")
+    parser.add_argument("--temperature", type=float, default=1.25, help="Temperature parameter for MCTS.")
+
+    parser.add_argument("--mcts_global", type=bool, default=False, help="Whether or not include `MCTS_Global_Parallel` class to tournament.")
+    parser.add_argument("--mcts_local", type=bool, required=True, help="Whether or not include `MCTS_Local_Parallel` class to tournament.")
+    parser.add_argument("--stochastic_powermean_uct_new", type=bool, required=True, help="Whether or not include `Stochastic_Powermean_UCT_New` class to tournament.")
+    parser.add_argument("--stochastic_powermean_uct", type=bool, required=True, help="Whether or not include `Stochastic_Powermean_UCT` class to tournament.")
+    parser.add_argument("--puct", type=bool, required=True, help="Whether or not include `PUCT` class to tournament.")
+
+    parser.add_argument("--log_file", type=str, default="tournament.log", help="Path to the log file.")
+
     args = parser.parse_args()
     run_tournament(args)
-# python -m tournament --puct_checkpoint checkpoint\PUCT_ConnectFour_iteration_10.pt --stochastic_powermean_uct_checkpoint checkpoint\Stochastic_Powermean_UCT_ConnectFour_iteration_10.pt
+
+    

@@ -32,7 +32,7 @@ class AlphaZero:
         while len(spGames) > 0:
             states = np.stack([spg.state for spg in spGames])
             neutral_states = self.game.change_perspective(states, player)
-
+            
             self.mcts.search(neutral_states, spGames)
             for i in range(len(spGames))[::-1]:
                 spg = spGames[i]

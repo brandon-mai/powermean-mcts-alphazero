@@ -102,7 +102,7 @@ class Node:
 class Stochastic_Powermean_UCT_New:
     def __init__(self, game, model, C=1.41, p=1.5, gamma=0.95,
                  dirichlet_epsilon=0.25, dirichlet_alpha=0.3, num_searches=25):
-        self.name = "Stochastic_Powermean_UCT"
+        self.name = "Stochastic_Powermean_UCT_New"
         self.game = game
         self.model = model
 
