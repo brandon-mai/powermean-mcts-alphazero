@@ -28,52 +28,41 @@ class ConnectFour(AbstractGame):
         return [i for i in range(self.column_count) if state[0, i] == 0]
 
     def check_win(self, state, player: int) -> str:
-        for i in range (self.row_count):
+        # Check horizontal, vertical, and both diagonals
+        for i in range(self.row_count):
             for j in range(self.column_count):
-                cnt = 0
-                for k in range(0, self.in_a_row):
-                    if j + k < self.column_count:
-                        cnt += (state[i][j+k] == player)
-                if cnt == self.in_a_row:
-                    # print(i, j, "ngang", player)
-                    return "win"
+                # Check horizontal
+                if j + self.in_a_row <= self.column_count:
+                    if all(state[i][j+k] == player for k in range(self.in_a_row)):
+                        return "win"
+                    if all(state[i][j+k] == -player for k in range(self.in_a_row)):
+                        return "lose"
                 
-                cnt = 0
-                for k in range(0, self.in_a_row):
-                    if i + k < self.row_count :
-                        cnt += (state[i+k][j] == player)
-                if cnt == self.in_a_row:
-                    # print(i,j,"doc", player)
-                    return "win"
+                # Check vertical
+                if i + self.in_a_row <= self.row_count:
+                    if all(state[i+k][j] == player for k in range(self.in_a_row)):
+                        return "win"
+                    if all(state[i+k][j] == -player for k in range(self.in_a_row)):
+                        return "lose"
                 
-                cnt = 0
-                for k in range(0, self.in_a_row):
-                    if j + k < self.column_count:
-                        cnt += (state[i][j+k] == -player)
-                if cnt == self.in_a_row:
-                    # print(i, j, "ngang", player)
-                    return "lose"
+                # Check diagonal (top-left to bottom-right)
+                if i + self.in_a_row <= self.row_count and j + self.in_a_row <= self.column_count:
+                    if all(state[i+k][j+k] == player for k in range(self.in_a_row)):
+                        return "win"
+                    if all(state[i+k][j+k] == -player for k in range(self.in_a_row)):
+                        return "lose"
                 
-                cnt = 0
-                for k in range(0, self.in_a_row):
-                    if i + k < self.row_count :
-                        cnt += (state[i+k][j] == -player)
-                if cnt == self.in_a_row:
-                    # print(i,j,"doc", player)
-                    return "lose"
-                
-        # for action in range(self.column_count):
-        #     if state[0, action] != 0:
-        #         row = np.min(np.where(state[:, action] != 0))
-        #         column = action
-        #         p = state[row][column]
-        #         if p == player and self._is_win(state, row, column, player):
-        #             return "win"
-        #         elif p != player and self._is_win(state, row, column, p):
-        #             return "lose"
-        if all(state[0, :] != 0):
+                # Check diagonal (top-right to bottom-left)
+                if i + self.in_a_row <= self.row_count and j - self.in_a_row + 1 >= 0:
+                    if all(state[i+k][j-k] == player for k in range(self.in_a_row)):
+                        return "win"
+                    if all(state[i+k][j-k] == -player for k in range(self.in_a_row)):
+                        return "lose"
+        
+        # Check draw
+        if np.all(state != 0):
             return "draw"
-        return "not_ended"  
+        return "not_ended"
 
     def get_value_and_terminated(self, state, player):
         result = self.check_win(state, player)
@@ -119,27 +108,3 @@ class ConnectFour(AbstractGame):
             if r < self.row_count - 1:
                 print("-" * (self.column_count * 4 - 1))
         print()
-
-    def _is_win(self, state, row, column, player):
-        def count(offset_row, offset_column):
-            for i in range(1, self.in_a_row):
-                r = row + offset_row * i
-                c = column + offset_column * i
-                if (
-                    r < 0
-                    or r >= self.row_count
-                    or c < 0
-                    or c >= self.column_count
-                    or state[r][c] != player
-                ):
-                    return i - 1
-            return self.in_a_row - 1
-        return (
-            count(1, 0) >= self.in_a_row - 1 # vertical
-            or (count(0, 1) + count(0, -1)) >= self.in_a_row - 1 # horizontal
-            or (count(1, 1) + count(-1, -1)) >= self.in_a_row - 1 # top left diagonal
-            or (count(1, -1) + count(-1, 1)) >= self.in_a_row - 1 # top right diagonal
-        )
-
-
-

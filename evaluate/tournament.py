@@ -285,3 +285,20 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     run_tournament(args)
+
+# !python /content/powermean-mcts-alphazero/evaluate/tournament.py \
+#   --model_checkpoint /content/PUCT_ConnectFour_iteration_8.pt \
+#   --num_searches 50 \
+#   --C 1.41 \
+#   --p 1.5 \
+#   --gamma 0.95 \
+#   --dirichlet_epsilon 0.25 \
+#   --dirichlet_alpha 0.3 \
+#   --num_games_per_pair 10 \
+#   --num_games_parallel 10 \
+#   --mcts_global \
+#   --mcts_local \
+#   --stochastic_powermean_uct_new \
+#   --stochastic_powermean_uct \
+#   --puct \
+#   --log_file /content/tournament_results.txt
