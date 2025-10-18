@@ -28,15 +28,49 @@ class ConnectFour(AbstractGame):
         return [i for i in range(self.column_count) if state[0, i] == 0]
 
     def check_win(self, state, player: int) -> str:
-        for action in range(self.column_count):
-            if state[0, action] != 0:
-                row = np.min(np.where(state[:, action] != 0))
-                column = action
-                p = state[row][column]
-                if p == player and self._is_win(state, row, column, player):
+        for i in range (self.row_count):
+            for j in range(self.column_count):
+                cnt = 0
+                for k in range(0, self.in_a_row):
+                    if j + k < self.column_count:
+                        cnt += (state[i][j+k] == player)
+                if cnt == self.in_a_row:
+                    # print(i, j, "ngang", player)
                     return "win"
-                elif p != player and self._is_win(state, row, column, p):
+                
+                cnt = 0
+                for k in range(0, self.in_a_row):
+                    if i + k < self.row_count :
+                        cnt += (state[i+k][j] == player)
+                if cnt == self.in_a_row:
+                    # print(i,j,"doc", player)
+                    return "win"
+                
+                cnt = 0
+                for k in range(0, self.in_a_row):
+                    if j + k < self.column_count:
+                        cnt += (state[i][j+k] == -player)
+                if cnt == self.in_a_row:
+                    # print(i, j, "ngang", player)
                     return "lose"
+                
+                cnt = 0
+                for k in range(0, self.in_a_row):
+                    if i + k < self.row_count :
+                        cnt += (state[i+k][j] == -player)
+                if cnt == self.in_a_row:
+                    # print(i,j,"doc", player)
+                    return "lose"
+                
+        # for action in range(self.column_count):
+        #     if state[0, action] != 0:
+        #         row = np.min(np.where(state[:, action] != 0))
+        #         column = action
+        #         p = state[row][column]
+        #         if p == player and self._is_win(state, row, column, player):
+        #             return "win"
+        #         elif p != player and self._is_win(state, row, column, p):
+        #             return "lose"
         if all(state[0, :] != 0):
             return "draw"
         return "not_ended"  

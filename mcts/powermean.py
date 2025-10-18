@@ -86,11 +86,14 @@ class Node:
             self.v_node_values[self.player_idx] = power_sum ** (1.0 / self.p)
 
         if self.parent:
-            self.q_node_values[self.player_idx] = (
-                self.q_node_values[self.player_idx] * self.visit_count
-                + immediate_reward
-                + self.gamma * self.v_node_values[self.player_idx]
-            ) / (self.visit_count + 1)
+            if final_reward is not None:
+                self.q_node_values[self.player_idx] = self.q_node_values[self.player_idx] + final_reward
+            else:
+                self.q_node_values[self.player_idx] = (
+                    self.q_node_values[self.player_idx] * self.visit_count
+                    + immediate_reward
+                    + self.gamma * self.v_node_values[self.player_idx]
+                ) / (self.visit_count + 1)
         self.visit_count += 1
         
         if self.parent:
