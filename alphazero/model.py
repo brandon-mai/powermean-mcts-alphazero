@@ -3,7 +3,52 @@ import torch.nn.functional as F
 import torch
 import numpy as np
 
+from concurrent.futures import ThreadPoolExecutor
 
+class MockNeuralNetwork(nn.Module):
+    def __init__(self, game, device, num_workers=100, num_rollout=1000):
+        super().__init__()
+        self.game = game
+        self.device = device
+        self.num_workers = num_workers
+        self.num_rollout = num_rollout
+    
+    def forward(self, states):
+        value = self.simulate(states)
+        policy = [[1.0 for i in range(self.game.action_size)] for _ in range(len(states))]
+        return value, policy
+    
+    def _single_rollout(self, state):
+        rollout_state = state.copy()
+        rollout_player = -1
+        while True:
+            action = np.random.choice(self.game.get_valid_moves(rollout_state))
+            rollout_state = self.game.get_next_state(rollout_state, action)
+            value, is_terminal = self.game.get_value_and_terminated(rollout_state, rollout_player)
+            if is_terminal:
+                if rollout_player == -1:
+                    value = self.game.get_opponent_value(value)
+                return value
+            rollout_player = self.game.get_opponent(rollout_player)
+    
+    def simulate(self, states):
+        values = []
+        for state in states:
+            value, is_terminal = self.game.get_value_and_terminated(
+                state=state, 
+                player=1)
+            
+            if is_terminal:
+                values.appen(value)
+                continue
+            
+            with ThreadPoolExecutor(max_workers=self.num_workers) as executor:
+                futures = [executor.submit(self._single_rollout, state) for _ in range(self.num_rollout)]
+                rollout_values = [future.result() for future in futures]
+            values.append(np.mean(rollout_values))
+            
+        return values
+    
 class ResNet(nn.Module):
     def __init__(self, game, num_resBlocks, num_hidden, device):
         super().__init__()
@@ -37,15 +82,16 @@ class ResNet(nn.Module):
         )
         
         self.to(device)
-        
-    def forward(self, x):
+
+    def forward(self, states):
+        x = torch.tensor(self.game.get_encoded_state(states), device=self.device)
+
         x = self.startBlock(x)
         for resBlock in self.backBone:
             x = resBlock(x)
         policy = self.policyHead(x)
         value = self.valueHead(x)
         return policy, value
-        
         
 class ResBlock(nn.Module):
     def __init__(self, num_hidden):
@@ -110,7 +156,7 @@ class PongAtariResNet(nn.Module):
         
         self.to(device)
     
-    def forward(self, state):
+    def forward(self, states):
         """
         Forward pass - handles both inference (single state) and training (batch).
         
@@ -118,12 +164,12 @@ class PongAtariResNet(nn.Module):
         For training: state is tensor batch (B, 3, 210, 160)
         """
         # Check if input is already a tensor (training mode)
-        if isinstance(state, torch.Tensor):
+        if isinstance(states, torch.Tensor):
             # Training mode: state is already encoded batch (B, 3, 210, 160)
-            x = state
+            x = states
         else:
             # Inference mode: encode single state and add batch dimension
-            encoded_state = self.game.get_encoded_state(state)
+            encoded_state = self.game.get_encoded_state(states)
             x = torch.tensor(encoded_state, dtype=torch.float32, device=self.device).unsqueeze(0)
         
         # Start block
@@ -141,7 +187,7 @@ class PongAtariResNet(nn.Module):
         value = self.valueHead(x)
         
         # Return format depends on mode
-        if isinstance(state, torch.Tensor):
+        if isinstance(states, torch.Tensor):
             # Training mode: return tensors for batch
             return policy_logits, value
         else:
@@ -187,3 +233,4 @@ if __name__ == "__main__":
     resnet = ResNet(game, num_resBlocks=9, num_hidden=128, device=device)
     resnet.apply(weights_init_normal)
     print_weight_stats(resnet, "ResNet")
+

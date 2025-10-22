@@ -18,7 +18,7 @@ class Node:
         self.children = []
         self.visit_count = visit_count
         self.value_sum = 0
-        
+
     def is_fully_expanded(self):
         return len(self.children) > 0
     
@@ -46,11 +46,21 @@ class Node:
             if prob > 0:
                 child_state = self.state.copy()
                 child_state = self.game.get_next_state(child_state, action)
-                child_state = self.game.change_perspective(child_state, player=-1)
+                child_state = self.game.change_perspective(
+                    state=child_state, 
+                    player=-1
+                )
 
                 child = Node(
-                    self.game, self.C, self.dirichlet_epsilon, self.dirichlet_alpha, self.num_searches,
-                    child_state, self, action, prob
+                    game=self.game, 
+                    C=self.C, 
+                    dirichlet_epsilon=self.dirichlet_epsilon, 
+                    dirichlet_alpha=self.dirichlet_alpha, 
+                    num_searches=self.num_searches,
+                    state=child_state, 
+                    parent=self, 
+                    action_taken=action, 
+                    prior=prob
                 )
                 self.children.append(child)
                 
@@ -77,26 +87,35 @@ class PUCT:
 
     @torch.no_grad()
     def search(self, states, spGames):
-        policy, _ = self.model(
-            torch.tensor(self.game.get_encoded_state(states), device=self.model.device)
+        policies, _ = self.model(
+            states=states
         )
-        policy = torch.softmax(policy, axis=1).cpu().numpy()
-        policy = (1 - self.dirichlet_epsilon) * policy + self.dirichlet_epsilon * np.random.dirichlet(
-            [self.dirichlet_alpha] * self.game.action_size, size=policy.shape[0]
+        policies = torch.softmax(policies, axis=1).cpu().numpy()
+        policies = (1 - self.dirichlet_epsilon) * policies + self.dirichlet_epsilon * np.random.dirichlet(
+            [self.dirichlet_alpha] * self.game.action_size, size=policies.shape[0]
         )
         
         for i, spg in enumerate(spGames):
-            spg_policy = policy[i]
+            spg_policy = policies[i]
+
             valid_moves = self.game.get_valid_moves(states[i])
             # create mask for valid moves
             valid_moves = np.array([1 if j in valid_moves else 0 for j in range(self.game.action_size)])
 
             spg_policy *= valid_moves
-            spg_policy /= np.sum(spg_policy)
+            if np.sum(spg_policy) == 0:
+                spg_policy = valid_moves / np.sum(valid_moves)
+            else:
+                spg_policy /= np.sum(spg_policy)
 
             spg.root = Node(
-                self.game, self.C, self.dirichlet_epsilon, self.dirichlet_alpha, self.num_searches,
-                states[i], visit_count=1
+                game=self.game, 
+                C=self.C, 
+                dirichlet_epsilon=self.dirichlet_epsilon, 
+                dirichlet_alpha=self.dirichlet_alpha, 
+                num_searches=self.num_searches,
+                state=states[i], 
+                visit_count=1
             )
             spg.root.expand(spg_policy)
         
@@ -119,24 +138,30 @@ class PUCT:
             expandable_spGames = [idx for idx in range(len(spGames)) if spGames[idx].node is not None]
                     
             if len(expandable_spGames) > 0:
-                states = np.stack([spGames[idx].node.state for idx in expandable_spGames])
+                states = np.stack([spGames[i].node.state for i in expandable_spGames])
                 
-                policy, value = self.model(
-                    torch.tensor(self.game.get_encoded_state(states), device=self.model.device)
+                policies, values = self.model(
+                    states=states
                 )
-                policy = torch.softmax(policy, axis=1).cpu().numpy()
-                value = value.cpu().numpy()
+                
+                policies = torch.softmax(policies, axis=1).cpu().numpy()
+                values = values.cpu().numpy()
                 
             for i, idx in enumerate(expandable_spGames):
                 node = spGames[idx].node
-                spg_policy, spg_value = policy[i], value[i]
+                spg_policy, spg_value = policies[i], values[i]
+
+                spg_value = (spg_value + 1) / 2  # Normalize value to [0, 1]
                 
-                valid_moves = self.game.get_valid_moves(node.state)
+                valid_moves = self.game.get_valid_moves(states[i])
                 # create mask for valid moves
                 valid_moves = np.array([1 if j in valid_moves else 0 for j in range(self.game.action_size)])
                 
                 spg_policy *= valid_moves
-                spg_policy /= np.sum(spg_policy)
+                if np.sum(spg_policy) == 0:
+                    spg_policy = valid_moves / np.sum(valid_moves)
+                else:
+                    spg_policy /= np.sum(spg_policy)
 
                 node.expand(spg_policy)
-                node.backpropagate(value=(spg_value + 1) / 2)  # Normalize value to [0, 1]
+                node.backpropagate(value=spg_value)  

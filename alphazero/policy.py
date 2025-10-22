@@ -53,14 +53,18 @@ class AlphaZero:
                 
                 action = np.random.choice(self.game.action_size, p=temperature_action_probs)
                 spg.state = self.game.get_next_state(spg.state, action)
-                # print(action, player, spg.state)
-                value, is_terminal = self.game.get_value_and_terminated(spg.state, player)
+
+                # always view from player 1's perspective
+                value, is_terminal = self.game.get_value_and_terminated(
+                    state=spg.state, 
+                    player=1)
+                
                 if is_terminal:
                     completed_games += 1
                     for hist_neutral_state, hist_action_probs, hist_player in spg.memory:
                         hist_outcome = value if hist_player == player else self.game.get_opponent_value(value)
                         return_memory.append((
-                            self.game.get_encoded_state(hist_neutral_state),
+                            hist_neutral_state,
                             hist_action_probs,
                             hist_outcome
                         ))
@@ -79,7 +83,6 @@ class AlphaZero:
         print("------------------------------------------------------------")
         return return_memory
 
-                
     def train(self, memory):
         print("------------------------------------------------------------")
         print(f"Starting training phase on {len(memory)} samples...")
@@ -90,14 +93,13 @@ class AlphaZero:
         for batchIdx in range(0, len(memory), self.batch_size):
             sample = memory[batchIdx:min(len(memory), batchIdx + self.batch_size)]
 
-            state, policy_targets, value_targets = zip(*sample)
-            state, policy_targets, value_targets = np.array(state), np.array(policy_targets), np.array(value_targets).reshape(-1, 1)
-            
-            state = torch.tensor(state, dtype=torch.float32, device=self.model.device)
+            states, policy_targets, value_targets = zip(*sample)
+            states, policy_targets, value_targets = np.stack(states), np.array(policy_targets), np.array(value_targets).reshape(-1, 1)
+
             policy_targets = torch.tensor(policy_targets, dtype=torch.float32, device=self.model.device)
             value_targets = torch.tensor(value_targets, dtype=torch.float32, device=self.model.device)
-            
-            out_policy, out_value = self.model(state)
+
+            out_policy, out_value = self.model(states)
             
             policy_loss = F.cross_entropy(out_policy, policy_targets)
             value_loss = F.mse_loss(out_value, value_targets)
@@ -152,7 +154,6 @@ class AlphaZero:
         print("\n============================================================")
         print("AlphaZero learning process finished successfully.")
         print("============================================================")
-
 
 class SPG:
     def __init__(self, game):

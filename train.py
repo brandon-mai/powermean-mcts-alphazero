@@ -6,7 +6,7 @@ from alphazero import AlphaZero
 from mcts import PUCT, Stochastic_Powermean_UCT, MCTS_Global_Parallel, MCTS_Local_Parallel
 import argparse
 import numpy as np
-from mcts.powermean_one import Stochastic_Powermean_UCT_New
+from mcts.powermean import Stochastic_Powermean_UCT_New
 
 torch.manual_seed(np.random.randint(0, 1000000))
 
