@@ -18,28 +18,30 @@ class Node:
         self.children = []
         self.visit_count = visit_count
         self.value_sum = 0
+        self.q_node_values = 0  
 
     def is_fully_expanded(self):
         return len(self.children) > 0
     
     def select(self):
-        best_child = None
-        best_ucb = -np.inf
+        worst_child = None
+        worst_ucb = np.inf
         
         for child in self.children:
             ucb = self.get_ucb(child)
-            if ucb > best_ucb:
-                best_child = child
-                best_ucb = ucb
+            if ucb < worst_ucb:
+                worst_child = child
+                worst_ucb = ucb
                 
-        return best_child
+        return worst_child
     
     def get_ucb(self, child):
+        # each node should be visit at least once!
         if child.visit_count == 0:
-            q_value = 0
-        else:
-            q_value = 1 - ((child.value_sum / child.visit_count) + 1) / 2
-        return q_value + self.C * (math.sqrt(self.visit_count) / (child.visit_count + 1)) * child.prior
+            return float('-inf')
+        
+        q_value = child.q_node_values
+        return q_value - self.C * (math.sqrt(self.visit_count) / (child.visit_count + 1)) * child.prior
     
     def expand(self, policy):
         for action, prob in enumerate(policy):
@@ -67,6 +69,8 @@ class Node:
         return child
             
     def backpropagate(self, value):
+        self.q_node_values = (self.q_node_values * self.visit_count + value) / (self.visit_count + 1)
+        
         self.value_sum += value
         self.visit_count += 1
         
@@ -128,7 +132,6 @@ class PUCT:
                     node = node.select()
 
                 value, is_terminal = self.game.get_value_and_terminated(node.state, node.game.get_current_player(node.state))
-                value = self.game.get_opponent_value(value)
                 
                 if is_terminal:
                     node.backpropagate(value)
@@ -164,4 +167,4 @@ class PUCT:
                     spg_policy /= np.sum(spg_policy)
 
                 node.expand(spg_policy)
-                node.backpropagate(value=spg_value)  
+                node.backpropagate(value=spg_value)

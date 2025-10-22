@@ -25,19 +25,23 @@ class Node:
         return len(self.children) > 0 
     
     def select_opponent(self):
-        best_node = None
-        best_ucb = -np.inf
+        wost_node = None
+        wost_ucb = np.inf
         
         for node in self.children:
             ucb = self.get_ucb(node)
-            if ucb > best_ucb:
-                best_node = node
-                best_ucb = ucb
-        return best_node
+            if ucb < wost_ucb:
+                wost_node = node
+                wost_ucb = ucb
+        return wost_node
     
     def get_ucb(self, node):
         q_value = node.q_node_values
-        return q_value + self.C * (math.pow(self.visit_count, 0.25) / math.sqrt(node.visit_count + 1)) * node.prior
+        # each node should be visit at least once!
+        if (node.visit_count == 0):
+            return float('-inf')
+        else:
+            return q_value - self.C * (math.pow(self.visit_count, 0.25) / math.sqrt(node.visit_count)) * node.prior
     
     def expand(self, policy):
         for action, prob in enumerate(policy):
@@ -162,7 +166,6 @@ class Stochastic_Powermean_UCT:
             for spg in spGames:
                 spg.node = None
                 node = spg.root
-                
 
                 while node.is_fully_expanded():
                     node = node.select_opponent()

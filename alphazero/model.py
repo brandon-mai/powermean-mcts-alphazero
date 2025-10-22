@@ -14,21 +14,36 @@ class MockNeuralNetwork(nn.Module):
         self.num_rollout = num_rollout
     
     def forward(self, states):
-        value = self.simulate(states)
-        policy = [[1.0 for i in range(self.game.action_size)] for _ in range(len(states))]
-        return value, policy
+        values = self.simulate(states)
+
+        value_tensor = torch.tensor(values, dtype=torch.float32, device=self.device)
+
+        batch_size = len(states)
+        policy_tensor = torch.ones((batch_size, self.game.action_size), dtype=torch.float32, device=self.device)
+
+        return policy_tensor, value_tensor
     
     def _single_rollout(self, state):
         rollout_state = state.copy()
-        rollout_player = -1
+        rollout_player = 1
         while True:
             action = np.random.choice(self.game.get_valid_moves(rollout_state))
             rollout_state = self.game.get_next_state(rollout_state, action)
-            value, is_terminal = self.game.get_value_and_terminated(rollout_state, rollout_player)
+            # always view as player 1's perspective
+            value, is_terminal = self.game.get_value_and_terminated(
+                state=rollout_state, 
+                player=1
+            )
             if is_terminal:
                 if rollout_player == -1:
                     value = self.game.get_opponent_value(value)
                 return value
+            
+            # neutral state
+            rollout_state = self.game.change_perspective(
+                state=rollout_state,
+                player=-1
+            )
             rollout_player = self.game.get_opponent(rollout_player)
     
     def simulate(self, states):
@@ -39,7 +54,7 @@ class MockNeuralNetwork(nn.Module):
                 player=1)
             
             if is_terminal:
-                values.appen(value)
+                values.append(value)
                 continue
             
             with ThreadPoolExecutor(max_workers=self.num_workers) as executor:
@@ -52,7 +67,7 @@ class MockNeuralNetwork(nn.Module):
 class ResNet(nn.Module):
     def __init__(self, game, num_resBlocks, num_hidden, device):
         super().__init__()
-        
+        self.game = game
         self.device = device
         self.startBlock = nn.Sequential(
             nn.Conv2d(3, num_hidden, kernel_size=3, padding=1),

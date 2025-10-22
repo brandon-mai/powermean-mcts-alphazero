@@ -45,12 +45,11 @@ def play_interactive(args):
     game = ConnectFour()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    print(f"Loading model from: {args.checkpoint_path}")
     model = MockNeuralNetwork(
         game=game, 
         device=device,
-        num_workers=100,
-        num_rollout=1000
+        num_workers=args.num_rollout,
+        num_rollout=args.num_worker
     )
     
     mcts = create_mcts(args.algorithm, game, model, args)
@@ -59,13 +58,12 @@ def play_interactive(args):
     print("Welcome to Connect Four!")
     print("You are X (player 1). Bot is O (player -1).")
     print(f"Algorithm: {args.algorithm}")
-    print(f"Temperature: {args.temperature}")
     print(f"Bot searches: {args.num_searches}")
     print("=" * 50)
 
     player = 1
     spGame = [SPG(game)]
-    
+
     while True:
         print("\n" + "=" * 50)
         game.render(spGame[0].state)
@@ -90,36 +88,37 @@ def play_interactive(args):
             action_probs = np.zeros(game.action_size)
             for child in spGame[0].root.children:
                 action_probs[child.action_taken] = child.visit_count
-            action_probs /= np.sum(action_probs)
 
-            temperature_action_probs = action_probs ** (1 / args.temperature)
-            if np.sum(temperature_action_probs) == 0:
-                temperature_action_probs = np.ones_like(temperature_action_probs) / len(temperature_action_probs)
-            else:
-                temperature_action_probs /= np.sum(temperature_action_probs)
-            
-            action = np.random.choice(game.action_size, p=temperature_action_probs)
+            action = np.argmax(action_probs)
+            print(f"{action_probs}")
             print(f"Bot plays at column {action}")
 
         spGame[0].state = game.get_next_state(
             state=spGame[0].state, 
             action=action)
         
-        # always view at player 1's perspective
         value, is_terminal = game.get_value_and_terminated(
             state=spGame[0].state, 
-            player=1)
+            player=player)
         
         if is_terminal:
             game.render(spGame[0].state)
             print("=" * 50)
             
-            if value == 1.0:
-                print("You win!") if player == 1 else print("Bot wins!")
-            elif value == 0.0:
-                print("Bot win!") if player == 1 else print("You wins!")
-            elif value == 0.5:
-                print("It's a draw")
+            if (player == 1):
+                if (value == 1.0):
+                    print("You wins!")
+                elif (value == 0.0):
+                    print("Bot win!")
+                elif (value == 0.5):
+                    print("It's a draw")
+            elif (player == -1):
+                if (value == 1.0):
+                    print("Bot wins!")
+                elif (value == 0.0):
+                    print("You win!")
+                elif (value == 0.5):
+                    print("It's a draw")                
             break
             
         player = game.get_opponent(player)
@@ -130,9 +129,10 @@ if __name__ == "__main__":
     parser.add_argument("--algorithm", type=str, default="PUCT",
                         choices=["PUCT", "Stochastic_Powermean_UCT"],
                         help="MCTS algorithm to use (default: PUCT).")
-    parser.add_argument("--temperature", type=float, default=1.0, 
-                        help="Temperature parameter for bot move selection (default: 1.0).")
-    
+    parser.add_argument("--num_rollout", type=int, default=100,
+                        help="num rollout games")
+    parser.add_argument("--num_worker", type=int, default=100, 
+                        help="num thread run parallel for rollout")
     parser.add_argument("--num_searches", type=int, default=600, 
                         help="Number of MCTS searches per bot move (default: 600).")
     parser.add_argument("--C", type=float, default=1.41, 
