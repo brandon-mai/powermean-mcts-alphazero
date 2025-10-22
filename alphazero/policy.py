@@ -34,6 +34,7 @@ class AlphaZero:
             neutral_states = self.game.change_perspective(states, player)
             
             self.mcts.search(neutral_states, spGames)
+
             for i in range(len(spGames))[::-1]:
                 spg = spGames[i]
                 action_probs = np.zeros(self.game.action_size)
@@ -42,10 +43,9 @@ class AlphaZero:
                     action_probs[child.action_taken] = child.visit_count
 
                 action_probs /= np.sum(action_probs)
-
                 spg.memory.append((spg.root.state, action_probs, player))
-                temperature_action_probs = action_probs ** (1 / self.temperature)
 
+                temperature_action_probs = action_probs ** (1 / self.temperature)
                 if np.sum(temperature_action_probs) == 0:
                     temperature_action_probs = np.ones_like(temperature_action_probs) / len(temperature_action_probs)
                 else:
@@ -74,7 +74,7 @@ class AlphaZero:
 
             if total_moves % 10 == 0:
                 print(f"[Update] Total moves simulated so far: {total_moves} | "
-                    f"Remaining active games: {len(spGames)}")
+                      f"Remaining active games: {len(spGames)}")
 
         print(f"Self-play completed.")
         print(f"Total simulated moves: {total_moves}")
@@ -139,7 +139,6 @@ class AlphaZero:
             for i in range(self.num_selfPlay_iterations // self.num_parallel_games):
                 print(f"--- Running self-play batch {i + 1}/{self.num_selfPlay_iterations // self.num_parallel_games} ---")
                 memory += self.selfPlay()
-            
             print("All self-play games completed. Starting model training.")
             self.model.train()
             for epoch in range(self.num_epochs):

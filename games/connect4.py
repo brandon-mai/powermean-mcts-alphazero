@@ -17,7 +17,7 @@ class ConnectFour(AbstractGame):
         count2 = np.sum(state == -1)
         return 1 if count1 <= count2 else -1
 
-    def get_next_state(self, state, action, player):
+    def get_next_state(self, state, action):
         player = self.get_current_player(state)
         row = np.max(np.where(state[:, action] == 0))
         new_state = state.copy()
