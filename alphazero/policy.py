@@ -54,10 +54,9 @@ class AlphaZero:
                 action = np.random.choice(self.game.action_size, p=temperature_action_probs)
                 spg.state = self.game.get_next_state(spg.state, action)
 
-                # always view from player 1's perspective
                 value, is_terminal = self.game.get_value_and_terminated(
                     state=spg.state, 
-                    player=1)
+                    player=player)
                 
                 if is_terminal:
                     completed_games += 1
