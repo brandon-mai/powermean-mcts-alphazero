@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-import argparse, sys, itertools
+import argparse, sys, itertools, time
 
 sys.path.append('/content/powermean-mcts-alphazero/')
 sys.path.append('/content/powermean-mcts-alphazero/games')
@@ -27,7 +27,13 @@ def play_interactive(game, player1, player2, num_games_parallel, temperature):
     player = 1
     spGames = [SPG(game) for _ in range(num_games_parallel)]
 
+    last_print_time = time.time()
+
     while len(spGames) > 0:
+        if time.time() - last_print_time >= 30:
+            print(f"Remaining games: {len(spGames)}")
+            last_print_time = time.time()
+
         if player == 1:
             states = np.stack([spg.state for spg in spGames])
             player1["alphazero"].search(
@@ -60,21 +66,22 @@ def play_interactive(game, player1, player2, num_games_parallel, temperature):
 
             value, is_terminal = game.get_value_and_terminated(spg.state, player)
             if is_terminal:
-                if (player == 1):
-                    if (value == 1.0):
+                if player == 1:
+                    if value == 1.0:
                         result["first_win"] += 1
-                    elif (value == 0.0):
+                    elif value == 0.0:
                         result["second_win"] += 1
-                    elif (value == 0.5):
+                    elif value == 0.5:
                         result["draw"] += 1
-                elif (player == -1):
-                    if (value == 1.0):
+                elif player == -1:
+                    if value == 1.0:
                         result["second_win"] += 1
-                    elif (value == 0.0):
+                    elif value == 0.0:
                         result["first_win"] += 1
-                    elif (value == 0.5):
+                    elif value == 0.5:
                         result["draw"] += 1
                 del spGames[i]
+
         player = game.get_opponent(player)  
 
     print("GAME ENDED")
@@ -86,7 +93,7 @@ def run_tournament(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     game = ConnectFour()
 
-    MODEL_CHECKPOINT = args.model_checkpoint
+    MODEL_CHECKPOINT = args.checkpoint_path
 
     print("=" * 70)
     print("TOURNAMENT CONFIGURATION")
@@ -213,7 +220,7 @@ if __name__ == "__main__":
                         help="Number of MCTS searches per bot move (default: 600).")
     parser.add_argument("--C", type=float, default=1.41, 
                         help="Exploration constant C for MCTS (default: 1.41).")
-    parser.add_argument("--p", type=float, default=[1.5], 
+    parser.add_argument("--p", type=float, nargs='+', default=[1.5], 
                         help="List of power parameter p for power mean algorithms (default: [1.5]).")
     parser.add_argument("--gamma", type=float, default=0.95, 
                         help="Discount factor gamma for MCTS (default: 0.95).")
