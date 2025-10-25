@@ -23,7 +23,10 @@ def main(args):
         else:
             raise ValueError(f"Unknown game: {args.game}")
         
-        model.apply(weights_init_normal)
+        if args.checkpoint_path:
+            model.load_state_dict(torch.load(args.checkpoint_path, map_location=device))
+        else:
+            model.apply(weights_init_normal)
 
         if args.algorithm == "PUCT":
             mcts = PUCT(
@@ -79,6 +82,7 @@ if __name__ == "__main__":
                         help="Choose MCTS algorithm")
     
     # Training parameters
+    parser.add_argument("--checkpoint_path", type=str, default=None, help="Path to the model checkpoint file used for loading pretrained weights or resuming training.")
     parser.add_argument("--num_parallel_games", type=int, default=100, help="Number of parallel games for MCTS and AlphaZero")
     parser.add_argument("--num_iterations", type=int, default=10, help="Number of AlphaZero iterations")
     parser.add_argument("--num_selfPlay_iterations", type=int, default=500, help="Number of self-play games per AlphaZero iteration")
