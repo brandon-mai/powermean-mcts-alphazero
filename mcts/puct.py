@@ -1,16 +1,15 @@
 import numpy as np
 import torch
 import math
+import copy
 
 class Node:
-    def __init__(self, game, C, dirichlet_epsilon, dirichlet_alpha, num_searches, state, parent=None, action_taken=None, prior=0, visit_count=0):
+    def __init__(self, game, C, state, player, parent=None, action_taken=None, prior=0, visit_count=0):
         self.game = game
         self.C = C
-        self.dirichlet_epsilon = dirichlet_epsilon
-        self.dirichlet_alpha = dirichlet_alpha
-        self.num_searches = num_searches
         
         self.state = state
+        self.player = player
         self.parent = parent
         self.action_taken = action_taken
         self.prior = prior
@@ -46,24 +45,19 @@ class Node:
     def expand(self, policy):
         for action, prob in enumerate(policy):
             if prob > 0:
-                child_state = self.state.copy()
+                child_state = copy.deepcopy(self.state)
                 child_state = self.game.get_next_state(child_state, action)
-                child_state = self.game.change_perspective(
-                    state=child_state, 
-                    player=-1
-                )
 
                 child = Node(
-                    game=self.game, 
-                    C=self.C, 
-                    dirichlet_epsilon=self.dirichlet_epsilon, 
-                    dirichlet_alpha=self.dirichlet_alpha, 
-                    num_searches=self.num_searches,
-                    state=child_state, 
-                    parent=self, 
-                    action_taken=action, 
-                    prior=prob
+                game=self.game,
+                C=self.C,
+                state=child_state,
+                player=self.game.get_opponent(self.player),
+                parent=self,
+                action_taken=action,
+                prior=prob
                 )
+
                 self.children.append(child)
                 
         return child
@@ -115,10 +109,8 @@ class PUCT:
             spg.root = Node(
                 game=self.game, 
                 C=self.C, 
-                dirichlet_epsilon=self.dirichlet_epsilon, 
-                dirichlet_alpha=self.dirichlet_alpha, 
-                num_searches=self.num_searches,
                 state=states[i], 
+                player=self.game.get_current_player(states[i]),
                 visit_count=1
             )
             spg.root.expand(spg_policy)
@@ -131,22 +123,23 @@ class PUCT:
                 while node.is_fully_expanded():
                     node = node.select()
 
-                value, is_terminal = self.game.get_value_and_terminated(node.state, node.game.get_current_player(node.state))
-                
+                value, is_terminal = self.game.get_value_and_terminated(
+                    state=node.state, 
+                    player=self.game.get_current_player(node.state)
+                )
+
                 if is_terminal:
                     node.backpropagate(value)
                 else:
                     spg.node = node
                     
-            expandable_spGames = [idx for idx in range(len(spGames)) if spGames[idx].node is not None]
+            expandable_spGames = [i for i in range(len(spGames)) if spGames[i].node is not None]
                     
             if len(expandable_spGames) > 0:
-                states = np.stack([spGames[i].node.state for i in expandable_spGames])
-                
+                states = [spGames[i].node.state for i in expandable_spGames]
                 policies, values = self.model(
                     states=states
                 )
-                
                 policies = torch.softmax(policies, axis=1).cpu().numpy()
                 values = values.cpu().numpy()
                 
@@ -156,7 +149,7 @@ class PUCT:
 
                 spg_value = (spg_value + 1) / 2  # Normalize value to [0, 1]
                 
-                valid_moves = self.game.get_valid_moves(states[i])
+                valid_moves = self.game.get_valid_moves(node.state)
                 # create mask for valid moves
                 valid_moves = np.array([1 if j in valid_moves else 0 for j in range(self.game.action_size)])
                 

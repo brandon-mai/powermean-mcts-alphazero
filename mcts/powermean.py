@@ -2,12 +2,13 @@ import numpy as np
 import math
 import torch
 
+import copy
+
 class Node:
     def __init__(self, game, state, player, C, p, gamma, parent=None, action_taken=None, prior=0, visit_count=0):
         self.game = game
         self.state = state
         self.player = player
-        self.player_idx = 0 if player == 1 else 1
         self.parent = parent
         self.action_taken = action_taken
         self.prior = prior
@@ -46,12 +47,8 @@ class Node:
     def expand(self, policy):
         for action, prob in enumerate(policy):
             if prob > 0:
-                node_state = self.state.copy()
+                node_state = copy.deepcopy(self.state)
                 node_state = self.game.get_next_state(node_state, action)
-                node_state = self.game.change_perspective(
-                    state=node_state,
-                    player=-1
-                )
 
                 node = Node(
                     game=self.game,
@@ -67,7 +64,7 @@ class Node:
                 self.children.append(node)
         return node
     
-    def backpropagate(self, update_player, final_reward=None, immediate_reward=0):
+    def backpropagate(self, update_player, final_reward=None):
         if update_player != self.player and self.parent:
             self.parent.backpropagate(update_player)
             return
@@ -78,9 +75,8 @@ class Node:
             power_sum = 0
             total_q_visit = self.visit_count + 1
             for node in self.children:
-                if not node.children:
-                    continue
-                total_q_visit -= 1
+                if node.children:
+                    total_q_visit -= 1
 
             for node in self.children:
                 if not node.children:
@@ -94,16 +90,18 @@ class Node:
                         powered = child.q_node_values ** self.p
                         contribution = weight * powered
                         power_sum += contribution
-                self.v_node_values = power_sum ** (1.0 / self.p)
+            self.v_node_values = power_sum ** (1.0 / self.p)
 
         if self.parent:
-            if final_reward:
+            if final_reward is not None:
                 self.q_node_values = (
                     self.q_node_values * self.visit_count 
                     + final_reward
                     + self.gamma * self.v_node_values
                 ) / (self.visit_count + 1) 
             else:
+                immediate_reward, _ = self.game.get_value_and_terminated(self.state, self.player) 
+                
                 self.q_node_values = (
                     self.q_node_values * self.visit_count
                     + immediate_reward
@@ -133,6 +131,7 @@ class Stochastic_Powermean_UCT:
         policies, _ = self.model(
             states=states
         )
+
         policies = torch.softmax(policies, axis=1).cpu().numpy()
         policies = (1 - self.dirichlet_epsilon) * policies + self.dirichlet_epsilon * np.random.dirichlet(
             [self.dirichlet_alpha] * self.game.action_size, size=policies.shape[0]
@@ -178,18 +177,17 @@ class Stochastic_Powermean_UCT:
                 if is_terminal:
                   node.backpropagate(update_player=node.player, final_reward=value)
                   node.parent.backpropagate(update_player=node.parent.player, final_reward=self.game.get_opponent_value(value))
-                    
                 else:
                     spg.node = node
                     
             expandable_spGames = [i for i in range(len(spGames)) if spGames[i].node is not None]
                     
             if len(expandable_spGames) > 0:
-                states = np.stack([spGames[i].node.state for i in expandable_spGames])
+                states = [spGames[i].node.state for i in expandable_spGames]
                 policies, values = self.model(
                     states=states
                 )
-                policies = torch.softmax(policies, axis=1).cpu().numpy()
+                policies = torch.softmax(policies, dim=1).cpu().numpy()
                 values = values.cpu().numpy()
                 
             for i, idx in enumerate(expandable_spGames):
@@ -198,7 +196,7 @@ class Stochastic_Powermean_UCT:
 
                 spg_value = (spg_value + 1) / 2  # Normalize value to [0, 1]
                 
-                valid_moves = self.game.get_valid_moves(states[i])
+                valid_moves = self.game.get_valid_moves(node.state)
                 # create mask for valid moves
                 valid_moves = np.array([1 if j in valid_moves else 0 for j in range(self.game.action_size)])
                 

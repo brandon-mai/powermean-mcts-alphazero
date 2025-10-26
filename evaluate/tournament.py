@@ -17,6 +17,22 @@ class SPG:
         self.state = game.get_initial_state()
         self.memory = []
 
+def create_game(game):
+    if game == "ConnectFour":
+        return ConnectFour()
+
+def create_model(game, device, args):
+    if (game == "ConnectFour"):
+        model = ResNet(
+            game=game, 
+            num_resBlocks=9, 
+            num_hidden=128, 
+            device=device
+        )
+        model.load_state_dict(torch.load(args.checkpoint_path, map_location=device))
+        model.eval()
+        return model    
+
 def play_interactive(game, player1, player2, num_games_parallel, temperature): 
     result = {
         "first_win": 0,
@@ -24,7 +40,9 @@ def play_interactive(game, player1, player2, num_games_parallel, temperature):
         "draw": 0
     }    
     
-    player = 1
+    player = game.get_current_player(
+        state=game.get_initial_state()
+    )
     spGames = [SPG(game) for _ in range(num_games_parallel)]
 
     last_print_time = time.time()
@@ -34,14 +52,14 @@ def play_interactive(game, player1, player2, num_games_parallel, temperature):
             print(f"Remaining games: {len(spGames)}")
             last_print_time = time.time()
 
-        if player == 1:
-            states = np.stack([spg.state for spg in spGames])
+        if player == 0:
+            states = [spg.state for spg in spGames]
             player1["alphazero"].search(
                 states=states, 
                 spGames=spGames
             )
         else:
-            states = np.stack([spg.state for spg in spGames])
+            states = [spg.state for spg in spGames]
             player2["alphazero"].search(
                 states=states, 
                 spGames=spGames
@@ -66,14 +84,14 @@ def play_interactive(game, player1, player2, num_games_parallel, temperature):
 
             value, is_terminal = game.get_value_and_terminated(spg.state, player)
             if is_terminal:
-                if player == 1:
+                if player == 0:
                     if value == 1.0:
                         result["first_win"] += 1
                     elif value == 0.0:
                         result["second_win"] += 1
                     elif value == 0.5:
                         result["draw"] += 1
-                elif player == -1:
+                elif player == 1:
                     if value == 1.0:
                         result["second_win"] += 1
                     elif value == 0.0:
@@ -91,7 +109,9 @@ def play_interactive(game, player1, player2, num_games_parallel, temperature):
 
 def run_tournament(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    game = ConnectFour()
+    game = create_game(
+        game=args.game
+    )
 
     MODEL_CHECKPOINT = args.checkpoint_path
 
@@ -102,9 +122,11 @@ def run_tournament(args):
     print(f"Game: {game.name}")
     print(f"Model checkpoint: {MODEL_CHECKPOINT}")
 
-    model = ResNet(game, 9, 128, device)
-    model.load_state_dict(torch.load(MODEL_CHECKPOINT, map_location=device))
-    model.eval()
+    model = create_model(
+        game=game, 
+        device=device, 
+        args=args
+    )
 
     mcts_list = []
     
@@ -213,7 +235,9 @@ def run_tournament(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Play Connect Four against MCTS bot.")
-    
+    parser.add_argument("--game", type=str, default="ConnectFour",
+                        choices=["ConnectFour"],
+                        help="game to player (default: ConnectFour).")    
     parser.add_argument("--checkpoint_path", type=str, required=True, 
                         help="Path to the model checkpoint."),
     parser.add_argument("--num_searches", type=int, default=600, 

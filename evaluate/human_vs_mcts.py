@@ -17,6 +17,10 @@ class SPG:
         self.state = game.get_initial_state()
         self.memory = []
 
+def create_game(game):
+    if game == "ConnectFour":
+        return ConnectFour()
+
 def create_mcts(algorithm, game, model, args):
     if algorithm == "PUCT":
         return PUCT(
@@ -42,26 +46,29 @@ def create_mcts(algorithm, game, model, args):
         raise ValueError(f"Unknown algorithm: {algorithm}")
 
 def play_interactive(args):
-    game = ConnectFour()
+    game = create_game(
+        game=args.game
+    )
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     model = MockNeuralNetwork(
         game=game, 
         device=device,
-        num_workers=args.num_rollout,
-        num_rollout=args.num_worker
+        num_workers=args.num_worker,
+        num_rollout=args.num_rollout
     )
     
     mcts = create_mcts(args.algorithm, game, model, args)
 
+    player = game.get_current_player(game.get_initial_state())
+
     print("=" * 50)
-    print("Welcome to Connect Four!")
-    print("You are X (player 1). Bot is O (player -1).")
+    print(f"Welcome to {game.name}!")
+    print(f"You are (player {player}). Bot is O (player {game.get_opponent(player)}).")
     print(f"Algorithm: {args.algorithm}")
     print(f"Bot searches: {args.num_searches}")
     print("=" * 50)
 
-    player = 1
     spGame = [SPG(game)]
 
     while True:
@@ -70,10 +77,10 @@ def play_interactive(args):
         valid_moves = game.get_valid_moves(spGame[0].state)
 
         if player == 1:
-            move = input("Your move (0-6): ").strip()
+            move = input("Your move: ").strip()
             try:
                 move = int(move)
-                if move < 0 or move >= game.column_count or move not in valid_moves:
+                if move not in valid_moves:
                     print("Invalid move, try again.")
                     continue
             except ValueError:
@@ -81,9 +88,8 @@ def play_interactive(args):
                 continue
             action = move
         else:
-            states = np.stack([spg.state for spg in spGame])
-            neutral_states = game.change_perspective(states, player)
-            mcts.search(neutral_states, spGame)
+            states = [spg.state for spg in spGame]
+            mcts.search(states, spGame)
 
             action_probs = np.zeros(game.action_size)
             for child in spGame[0].root.children:
@@ -105,14 +111,14 @@ def play_interactive(args):
             game.render(spGame[0].state)
             print("=" * 50)
             
-            if (player == 1):
+            if (player == 0):
                 if (value == 1.0):
                     print("You wins!")
                 elif (value == 0.0):
                     print("Bot win!")
                 elif (value == 0.5):
                     print("It's a draw")
-            elif (player == -1):
+            elif (player == 1):
                 if (value == 1.0):
                     print("Bot wins!")
                 elif (value == 0.0):
@@ -124,8 +130,10 @@ def play_interactive(args):
         player = game.get_opponent(player)
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Play Connect Four against MCTS bot.")
-    
+    parser = argparse.ArgumentParser(description="Play against MCTS bot.")
+    parser.add_argument("--game", type=str, default="ConnectFour",
+                        choices=["ConnectFour"],
+                        help="game to player (default: ConnectFour).")
     parser.add_argument("--algorithm", type=str, default="PUCT",
                         choices=["PUCT", "Stochastic_Powermean_UCT"],
                         help="MCTS algorithm to use (default: PUCT).")

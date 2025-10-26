@@ -7,22 +7,35 @@ from mcts import PUCT, Stochastic_Powermean_UCT
 import argparse
 import numpy as np
 
-torch.manual_seed(np.random.randint(0, 1000000))
+torch.manual_seed(0)
+
+def create_game(game):
+    if game == "ConnectFour":
+        return ConnectFour()
+
+def create_model(game, device, args):
+    if (game == "ConnectFour"):
+        model = ResNet(
+            game=game, 
+            num_resBlocks=9, 
+            num_hidden=128, 
+            device=device
+        )
+        return model    
 
 def main(args):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        if args.game == "pong":
-            game = PongAtari()
-            model = PongAtariResNet(game, 9, 128, device)
-        elif args.game == "connect4":
-            game = ConnectFour()
-            model = ResNet(game, 9, 128, device)
-        elif args.game == "tictactoe":
-            game = TicTacToe()
-            model = ResNet(game, 9, 64, device)
-        else:
-            raise ValueError(f"Unknown game: {args.game}")
         
+        game = create_game(
+            game=args.game
+        )
+
+        model = create_model(
+            game=game,
+            device=device,
+            args=args
+        ) 
+
         if args.checkpoint_path:
             model.load_state_dict(torch.load(args.checkpoint_path, map_location=device))
         else:
@@ -73,7 +86,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Full AlphaZero pipeline.")
     
     # Game selection
-    parser.add_argument("--game", type=str, choices=["pong", "connect4", "tictactoe"], default="connect4", help="Chọn game để train")
+    parser.add_argument("--game", type=str, choices=["ConnectFour",], default="ConnectFour", help="Game to train")
     
     # Algorithm selection
     parser.add_argument("--algorithm", type=str, 

@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 import torch.nn.functional as F
-import random, os
+import random, os, copy
 
 class AlphaZero:
     def __init__(self, model, optimizer, game, mcts,
@@ -23,17 +23,17 @@ class AlphaZero:
         print("------------------------------------------------------------")
         print("Starting self-play phase...")
         return_memory = []
-        player = 1
+        player = self.game.get_current_player(
+            self.game.get_initial_state()
+        )
         
         spGames = [SPG(self.game) for _ in range(self.num_parallel_games)]
         total_moves = 0
         completed_games = 0
 
         while len(spGames) > 0:
-            states = np.stack([spg.state for spg in spGames])
-            neutral_states = self.game.change_perspective(states, player)
-            
-            self.mcts.search(neutral_states, spGames)
+            states = [spg.state for spg in spGames]
+            self.mcts.search(states, spGames)
 
             for i in range(len(spGames))[::-1]:
                 spg = spGames[i]
@@ -43,7 +43,7 @@ class AlphaZero:
                     action_probs[child.action_taken] = child.visit_count
 
                 action_probs /= np.sum(action_probs)
-                spg.memory.append((spg.root.state, action_probs, player))
+                spg.memory.append((copy.deepcopy(spg.root.state), action_probs, player))
 
                 temperature_action_probs = action_probs ** (1 / self.temperature)
                 if np.sum(temperature_action_probs) == 0:
@@ -93,7 +93,7 @@ class AlphaZero:
             sample = memory[batchIdx:min(len(memory), batchIdx + self.batch_size)]
 
             states, policy_targets, value_targets = zip(*sample)
-            states, policy_targets, value_targets = np.stack(states), np.array(policy_targets), np.array(value_targets).reshape(-1, 1)
+            states, policy_targets, value_targets = states, np.array(policy_targets), np.array(value_targets).reshape(-1, 1)
 
             policy_targets = torch.tensor(policy_targets, dtype=torch.float32, device=self.model.device)
             value_targets = torch.tensor(value_targets, dtype=torch.float32, device=self.model.device)
