@@ -76,7 +76,7 @@ def play_interactive(args):
         game.render(spGame[0].state)
         valid_moves = game.get_valid_moves(spGame[0].state)
 
-        if player == 1:
+        if player == 0:
             move = input("Your move: ").strip()
             try:
                 move = int(move)

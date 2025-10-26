@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-import argparse, sys, itertools, time
+import argparse, sys, itertools, time, json, os
 
 sys.path.append('/content/powermean-mcts-alphazero/')
 sys.path.append('/content/powermean-mcts-alphazero/games')
@@ -22,7 +22,7 @@ def create_game(game):
         return ConnectFour()
 
 def create_model(game, device, args):
-    if (game == "ConnectFour"):
+    if (game.name == "ConnectFour"):
         model = ResNet(
             game=game, 
             num_resBlocks=9, 
@@ -145,7 +145,7 @@ def run_tournament(args):
                 dirichlet_alpha=args.dirichlet_alpha, 
                 num_searches=args.num_searches                
             )
-        },            
+        }
     )
 
     # add puct
@@ -219,6 +219,7 @@ def run_tournament(args):
     print("\n" + "=" * 70)
     print("FINAL TOURNAMENT RESULTS")
     print("=" * 70)
+    result = []
     for name, record in results.items():
         total_games = record["win"] + record["loss"] + record["draw"]
         win_rate = (record["win"] / total_games * 100) if total_games > 0 else 0
@@ -227,19 +228,34 @@ def run_tournament(args):
         print(f"  Losses: {record['loss']}")
         print(f"  Draws: {record['draw']}")
         print(f"  Win Rate: {win_rate:.2f}%")
+        result.append(
+            {
+                "name": name,
+                "Wins": record['win'],
+                "Losses": record['loss'],
+                "Draws": record['draw'],
+            }
+        )
         print("-" * 50)
     
+
     print("=" * 70)
     print("TOURNAMENT COMPLETED")
     print("=" * 70)
 
+    os.makedirs("evaluate_result", exist_ok=True)
+    json_file_path = f"evaluate_result/{game.name}_model_{args.checkpoint_path.split('/')[-1]}.json"
+    with open(json_file_path, "w") as f:
+        json.dump(result, f, indent=4)
+    print(f"Results saved to {json_file_path}")
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Play Connect Four against MCTS bot.")
+    parser = argparse.ArgumentParser(description="Tournament.")
     parser.add_argument("--game", type=str, default="ConnectFour",
                         choices=["ConnectFour"],
                         help="game to player (default: ConnectFour).")    
     parser.add_argument("--checkpoint_path", type=str, required=True, 
-                        help="Path to the model checkpoint."),
+                        help="Path to the model checkpoint.")
     parser.add_argument("--num_searches", type=int, default=600, 
                         help="Number of MCTS searches per bot move (default: 600).")
     parser.add_argument("--C", type=float, default=1.41, 
@@ -258,7 +274,6 @@ if __name__ == "__main__":
     parser.add_argument("--num_games_parallel", type=int, default=10, 
                         help="Number of parallel games to run.")
     parser.add_argument("--temperature", type=float, default=1.0, 
-                        help="Temperature parameter for MCTS.")    
-
+                        help="Temperature parameter for MCTS.")
     args = parser.parse_args()
     run_tournament(args)

@@ -46,7 +46,7 @@ def create_mcts(algorithm, game, model, args):
         raise ValueError(f"Unknown algorithm: {algorithm}")
 
 def create_model(game, device, args):
-    if (game == "ConnectFour"):
+    if (game.name == "ConnectFour"):
         model = ResNet(
             game=game, 
             num_resBlocks=9, 
@@ -95,7 +95,7 @@ def play_interactive(args):
         game.render(spGame[0].state)
         valid_moves = game.get_valid_moves(spGame[0].state)
 
-        if player == 1:
+        if player == 0:
             move = input("Your move: ").strip()
             try:
                 move = int(move)

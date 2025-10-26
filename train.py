@@ -1,7 +1,7 @@
 import math
-from alphazero.model import PongAtariResNet, ResNet, weights_init_normal
+from alphazero.model import ResNet, weights_init_normal
 import torch
-from games import PongAtari, ConnectFour, TicTacToe
+from games import ConnectFour
 from alphazero import AlphaZero
 from mcts import PUCT, Stochastic_Powermean_UCT
 import argparse
@@ -14,7 +14,7 @@ def create_game(game):
         return ConnectFour()
 
 def create_model(game, device, args):
-    if (game == "ConnectFour"):
+    if (game.name == "ConnectFour"):
         model = ResNet(
             game=game, 
             num_resBlocks=9, 

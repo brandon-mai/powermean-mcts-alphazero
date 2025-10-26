@@ -11,6 +11,8 @@ class ConnectFour():
         self.game = pyspiel.load_game("connect_four")
         self.action_size = self.game.num_distinct_actions()
         
+        self.num_planes, self.row_count, self.column_count = self.game.observation_tensor_shape()
+
     def get_initial_state(self):
         state = self.game.new_initial_state()
         return copy.deepcopy(state)
@@ -51,7 +53,7 @@ class ConnectFour():
     def get_encoded_state(self, state):
         shape = self.game.observation_tensor_shape()
 
-        if isinstance(state, list):  
+        if isinstance(state, list) or isinstance(state, tuple):  
             encoded_state = []
             for s in state:
                 encoded_state.append(np.reshape(np.asarray(s.observation_tensor()), shape))

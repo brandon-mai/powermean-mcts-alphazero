@@ -171,7 +171,7 @@ class Stochastic_Powermean_UCT:
 
                 value, is_terminal = self.game.get_value_and_terminated(
                     state=node.state, 
-                    player=self.game.get_current_player(node.state)
+                    player=node.player
                 )
                 
                 if is_terminal:

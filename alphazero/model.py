@@ -3,6 +3,8 @@ import torch.nn.functional as F
 import torch
 import numpy as np
 
+import copy
+
 from concurrent.futures import ThreadPoolExecutor
 
 class MockNeuralNetwork(nn.Module):
@@ -25,7 +27,7 @@ class MockNeuralNetwork(nn.Module):
         return policy_tensor, value_tensor
     
     def _single_rollout(self, state, player):
-        rollout_state = state.copy()
+        rollout_state = copy.deepcopy(state)
         rollout_player = state.current_player()
         while True:
             action = np.random.choice(self.game.get_valid_moves(rollout_state))
@@ -42,10 +44,7 @@ class MockNeuralNetwork(nn.Module):
     def simulate(self, states):
         values = []
         for state in states:
-            # target player is opponent of state's current player 
-            player = self.game.get_opponent(
-                self.game.get_current_player(state=state)
-            )
+            player = self.game.get_current_player(state=state)
 
             value, is_terminal = self.game.get_value_and_terminated(
                 state=state, 
@@ -121,3 +120,36 @@ class ResBlock(nn.Module):
         x += residual
         x = F.relu(x)
         return x
+
+def weights_init_normal(m):
+    classname = m.__class__.__name__
+    # for every Linear layer in a model
+    if classname.find('Linear') != -1:
+        y = m.in_features
+    # m.weight.data shoud be taken from a normal distribution
+        m.weight.data.normal_(0.0,1/np.sqrt(y))
+    # m.bias.data should be 0
+        m.bias.data.fill_(0)
+
+
+def print_weight_stats(model, name):
+    print(f"--- {name} ---")
+    for n, p in model.named_parameters():
+        if p.requires_grad:
+            print(f"{n}: mean={p.data.mean():.4f}, std={p.data.std():.4f}, shape={tuple(p.shape)}")
+
+if __name__ == "__main__":
+    class DummyGame:
+        row_count = 6
+        column_count = 7
+        action_size = 7
+        def get_encoded_state(self, state):
+            return torch.zeros(6, 7)
+
+    device = 'cpu'
+    game = DummyGame()
+
+    # Test ResNet
+    resnet = ResNet(game, num_resBlocks=9, num_hidden=128, device=device)
+    resnet.apply(weights_init_normal)
+    print_weight_stats(resnet, "ResNet")
