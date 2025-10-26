@@ -1,7 +1,7 @@
 import math
 from alphazero.model import ResNet, weights_init_normal
 import torch
-from games import ConnectFour
+from games import ConnectFour, Breakthrough
 from alphazero import AlphaZero
 from mcts import PUCT, Stochastic_Powermean_UCT
 import argparse
@@ -12,6 +12,8 @@ torch.manual_seed(0)
 def create_game(game):
     if game == "ConnectFour":
         return ConnectFour()
+    elif game == "Breakthrough":
+        return Breakthrough()
 
 def create_model(game, device, args):
     if (game.name == "ConnectFour"):
@@ -22,6 +24,14 @@ def create_model(game, device, args):
             device=device
         )
         return model    
+    elif (game.name == "Breakthrough"):
+        model = ResNet(
+            game=game, 
+            num_resBlocks=12, 
+            num_hidden=128, 
+            device=device
+        )
+        return model
 
 def main(args):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -86,7 +96,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Full AlphaZero pipeline.")
     
     # Game selection
-    parser.add_argument("--game", type=str, choices=["ConnectFour",], default="ConnectFour", help="Game to train")
+    parser.add_argument("--game", type=str, choices=["ConnectFour", "Breakthrough"], default="ConnectFour", help="Game to train")
     
     # Algorithm selection
     parser.add_argument("--algorithm", type=str, 

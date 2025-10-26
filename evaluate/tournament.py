@@ -7,7 +7,7 @@ sys.path.append('/content/powermean-mcts-alphazero/games')
 sys.path.append('/content/powermean-mcts-alphazero/alphazero')
 sys.path.append('/content/powermean-mcts-alphazero/mcts')
 
-from games import ConnectFour
+from games import ConnectFour, Breakthrough
 from alphazero import ResNet
 from mcts import Stochastic_Powermean_UCT, PUCT
 
@@ -20,6 +20,8 @@ class SPG:
 def create_game(game):
     if game == "ConnectFour":
         return ConnectFour()
+    elif game == "Breakthrough":
+        return Breakthrough()
 
 def create_model(game, device, args):
     if (game.name == "ConnectFour"):
@@ -31,7 +33,17 @@ def create_model(game, device, args):
         )
         model.load_state_dict(torch.load(args.checkpoint_path, map_location=device))
         model.eval()
-        return model    
+        return model   
+    elif (game.name == "Breakthrough"):
+        model = ResNet(
+            game=game, 
+            num_resBlocks=12, 
+            num_hidden=128, 
+            device=device
+        )
+        model.load_state_dict(torch.load(args.checkpoint_path, map_location=device))
+        model.eval()
+        return model            
 
 def play_interactive(game, player1, player2, num_games_parallel, temperature): 
     result = {
@@ -252,7 +264,7 @@ def run_tournament(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Tournament.")
     parser.add_argument("--game", type=str, default="ConnectFour",
-                        choices=["ConnectFour"],
+                        choices=["ConnectFour", "Breakthrough"],
                         help="game to player (default: ConnectFour).")    
     parser.add_argument("--checkpoint_path", type=str, required=True, 
                         help="Path to the model checkpoint.")

@@ -7,7 +7,7 @@ sys.path.append('/content/powermean-mcts-alphazero/games')
 sys.path.append('/content/powermean-mcts-alphazero/alphazero')
 sys.path.append('/content/powermean-mcts-alphazero/mcts')
 
-from games import ConnectFour
+from games import ConnectFour, Breakthrough
 from alphazero import MockNeuralNetwork
 from mcts import Stochastic_Powermean_UCT, PUCT
 
@@ -20,6 +20,8 @@ class SPG:
 def create_game(game):
     if game == "ConnectFour":
         return ConnectFour()
+    elif game == "Breakthrough":
+        return Breakthrough()
 
 def create_mcts(algorithm, game, model, args):
     if algorithm == "PUCT":
@@ -132,7 +134,7 @@ def play_interactive(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Play against MCTS bot.")
     parser.add_argument("--game", type=str, default="ConnectFour",
-                        choices=["ConnectFour"],
+                        choices=["ConnectFour", "Breakthrough"],
                         help="game to player (default: ConnectFour).")
     parser.add_argument("--algorithm", type=str, default="PUCT",
                         choices=["PUCT", "Stochastic_Powermean_UCT"],

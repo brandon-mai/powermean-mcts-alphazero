@@ -104,6 +104,7 @@ class AlphaZero:
             value_loss = F.mse_loss(out_value, value_targets)
             l2_weight = 1e-4
             l2_loss = 0.0
+            
             for name, param in self.model.named_parameters():
                 if param.requires_grad and not any(x in name for x in ['bias', 'beta']):
                     l2_loss += torch.sum(param.pow(2))
