@@ -20,7 +20,7 @@ class SPG:
 def create_game(game):
     if game == "ConnectFour":
         return ConnectFour()
-    elif game == "Breakthrough"
+    elif game == "Breakthrough":
         return Breakthrough()
 
 def create_mcts(algorithm, game, model, args):
