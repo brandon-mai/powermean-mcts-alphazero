@@ -7,6 +7,8 @@ class AlphaZero:
     def __init__(self, model, optimizer, game, mcts,
                  num_parallel_games, temperature, batch_size,
                  num_iterations, num_selfPlay_iterations, num_epochs):
+        self.policy_name = "AlphaZero"
+        self.num_searches = mcts.num_searches
         self.model = model
         self.optimizer = optimizer
         self.game = game
@@ -147,7 +149,8 @@ class AlphaZero:
                 self.train(memory)
 
             os.makedirs("checkpoint", exist_ok=True)
-            torch.save(self.model.state_dict(), f"checkpoint/{self.mcts.name}_{self.game.name}_iteration_{iteration + 1}.pt")
+            torch.save(self.model.state_dict(), 
+                       f"checkpoint/policy {self.policy_name}_mtcs {self.mcts.name}_game {self.game.name}_num_parallel_games {self.num_parallel_games}_num_selfPlay_iterations {self.num_selfPlay_iterations}_batch_size {self.batch_size}_num_epochs {self.num_epochs}_num_searches {self.num_searches}_iteration {iteration + 1}.pt")
             print(f"Model and optimizer checkpoints saved for iteration {iteration + 1}.")
 
         print("\n============================================================")
