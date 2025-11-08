@@ -886,20 +886,19 @@ class StochasticMuZeroNetwork(nn.Module):
             chance_encoding, chance_onehot: (optional) nếu use_chance_encoder
         """
         # Encode observation
-        if isinstance(observations, np.ndarray):
-            # Already numpy array - just convert to tensor
-            observations = torch.tensor(observations, device=self.device, dtype=torch.float32)
+        if isinstance(observations, torch.Tensor):
+            observations = observations.to(self.device)
+        elif isinstance(observations, np.ndarray):
+            # Check if object array (nested structure)
+            if observations.dtype == object:
+                # Try to stack individual items
+                observations = np.stack([np.array(obs, dtype=np.float32) for obs in observations])
+            observations = torch.from_numpy(observations).float().to(self.device)
         elif isinstance(observations, list):
-            # List - need to convert
-            if hasattr(self, 'game') and hasattr(self.game, 'get_encoded_state'):
-                observations = torch.tensor(
-                    self.game.get_encoded_state(observations),
-                    device=self.device,
-                    dtype=torch.float32
-                )
-            else:
-                observations = torch.tensor(np.array(observations), device=self.device, dtype=torch.float32)
-        elif not isinstance(observations, torch.Tensor):
+            # Convert list to numpy then tensor
+            observations = np.stack([np.array(obs, dtype=np.float32) for obs in observations])
+            observations = torch.from_numpy(observations).float().to(self.device)
+        else:
             # Fallback: try to convert whatever it is
             observations = torch.tensor(observations, device=self.device, dtype=torch.float32)
         

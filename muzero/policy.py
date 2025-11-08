@@ -312,7 +312,10 @@ class MuZero:
         
         # === INITIAL INFERENCE ===
         observations = [sample['observation'] for sample in batch]
-        hidden_states, policy_logits, values = self.model.initial_inference(observations)
+        
+        # Encode observations nếu chưa encoded
+        encoded_observations = self.game.get_encoded_state(observations)
+        hidden_states, policy_logits, values = self.model.initial_inference(encoded_observations)
         
         # Initial policy loss
         policy_targets = torch.tensor(
