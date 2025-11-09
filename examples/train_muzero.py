@@ -105,11 +105,18 @@ def train_muzero_advanced():
     game = ConnectFour()
     
     # Model: Larger network
+    observation_shape = (game.num_planes, game.row_count, game.column_count)
+    
     model = MuZeroNetwork(
-        game=game,
-        num_resBlocks=6,      # Nhiều ResBlocks hơn
-        num_hidden=128,       # Nhiều channels
-        latent_dim=32,        # Larger latent space
+        observation_shape=observation_shape,
+        action_space_size=game.action_size,
+        num_res_blocks=6,      # Nhiều ResBlocks hơn
+        num_channels=128,      # Nhiều channels
+        use_chance_encoder=False,
+        use_afterstate=False,
+        use_categorical=True,
+        reward_support_range=(-10., 11., 1.),
+        value_support_range=(-10., 11., 1.),
         device=device
     )
     model.apply(weights_init_normal)
@@ -168,11 +175,18 @@ def continue_training_from_checkpoint():
     game = ConnectFour()
     
     # Model
+    observation_shape = (game.num_planes, game.row_count, game.column_count)
+    
     model = MuZeroNetwork(
-        game=game,
-        num_resBlocks=6,
-        num_hidden=128,
-        latent_dim=32,
+        observation_shape=observation_shape,
+        action_space_size=game.action_size,
+        num_res_blocks=6,
+        num_channels=128,
+        use_chance_encoder=False,
+        use_afterstate=False,
+        use_categorical=True,
+        reward_support_range=(-10., 11., 1.),
+        value_support_range=(-10., 11., 1.),
         device=device
     )
     
@@ -203,7 +217,7 @@ def continue_training_from_checkpoint():
         game=game,
         mcts=mcts,
         num_parallel_games=100,
-        temperature=1.25,
+        temperature=1.41,
         batch_size=128,
         num_iterations=5,            # Train thêm 5 iterations
         num_selfPlay_iterations=500,
@@ -268,11 +282,18 @@ def compare_hyperparameters():
         print(f"{'='*80}")
         
         # Model
+        observation_shape = (game.num_planes, game.row_count, game.column_count)
+        
         model = MuZeroNetwork(
-            game=game,
-            num_resBlocks=4,
-            num_hidden=64,
-            latent_dim=config['latent_dim'],
+            observation_shape=observation_shape,
+            action_space_size=game.action_size,
+            num_res_blocks=4,
+            num_channels=64,
+            use_chance_encoder=False,
+            use_afterstate=False,
+            use_categorical=True,
+            reward_support_range=(-10., 11., 1.),
+            value_support_range=(-10., 11., 1.),
             device=device
         )
         model.apply(weights_init_normal)

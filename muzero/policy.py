@@ -272,6 +272,10 @@ class MuZero:
         for batchIdx in range(0, len(samples), self.batch_size):
             batch = samples[batchIdx:min(len(samples), batchIdx + self.batch_size)]
             
+            # Skip batches with size 1 (BatchNorm requirement)
+            if len(batch) < 2:
+                continue
+            
             # Compute loss
             loss, loss_dict = self._compute_loss(batch)
             
@@ -315,6 +319,9 @@ class MuZero:
         
         # Encode observations nếu chưa encoded
         encoded_observations = self.game.get_encoded_state(observations)
+        
+        # Ensure model is in training mode for BatchNorm
+        self.model.train()
         hidden_states, policy_logits, values = self.model.initial_inference(encoded_observations)
         
         # Initial policy loss
@@ -331,7 +338,20 @@ class MuZero:
         )
         # Normalize value targets về [-1, 1]
         value_targets = value_targets * 2 - 1
-        value_loss = F.mse_loss(values, value_targets)
+        
+        # Handle categorical vs scalar values
+        if values.shape[-1] > 1:
+            # Categorical: convert to scalar first
+            from muzero.model import categorical_to_scalar
+            value_support_range = getattr(self.model, 'value_support_range', (-300, 301, 1))
+            values_scalar = categorical_to_scalar(
+                torch.softmax(values, dim=-1),
+                value_support_range
+            )
+            value_loss = F.mse_loss(values_scalar, value_targets)
+        else:
+            # Scalar values
+            value_loss = F.mse_loss(values, value_targets)
         
         # === UNROLL DYNAMICS ===
         reward_loss = 0.0
@@ -393,10 +413,33 @@ class MuZero:
             value_targets_k = value_targets_k * 2 - 1
             reward_targets_k = reward_targets_k * 2 - 1
             
+            # Handle categorical values/rewards
+            if values.shape[-1] > 1:
+                # Categorical: convert to scalar
+                from muzero.model import categorical_to_scalar
+                value_support_range = getattr(self.model, 'value_support_range', (-300, 301, 1))
+                values_scalar = categorical_to_scalar(
+                    torch.softmax(values, dim=-1),
+                    value_support_range
+                )
+            else:
+                values_scalar = values
+            
+            if rewards.shape[-1] > 1:
+                # Categorical: convert to scalar
+                from muzero.model import categorical_to_scalar
+                reward_support_range = getattr(self.model, 'reward_support_range', (-300, 301, 1))
+                rewards_scalar = categorical_to_scalar(
+                    torch.softmax(rewards, dim=-1),
+                    reward_support_range
+                )
+            else:
+                rewards_scalar = rewards
+            
             # Compute losses với masking
             policy_loss += (F.cross_entropy(policy_logits, policy_targets_k, reduction='none').mean() * masks).mean()
-            value_loss += (F.mse_loss(values, value_targets_k, reduction='none') * masks).mean()
-            reward_loss += (F.mse_loss(rewards, reward_targets_k, reduction='none') * masks).mean()
+            value_loss += (F.mse_loss(values_scalar, value_targets_k, reduction='none') * masks).mean()
+            reward_loss += (F.mse_loss(rewards_scalar, reward_targets_k, reduction='none') * masks).mean()
         
         # === TOTAL LOSS ===
         # Weight các losses

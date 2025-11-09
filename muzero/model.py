@@ -725,36 +725,172 @@ class AfterstatePredictionNetwork(nn.Module):
 
 class StochasticMuZeroNetwork(nn.Module):
     """
-    Full Stochastic MuZero Network với đầy đủ features như LightZero
+    ═══════════════════════════════════════════════════════════════════════════
+    STOCHASTIC MUZERO NETWORK - Full Implementation
+    ═══════════════════════════════════════════════════════════════════════════
+    
+    Kiến trúc linh hoạt hỗ trợ cả deterministic và stochastic environments.
     
     Support:
-    - Board games (Connect4, Chess, etc.)
-    - Atari games
-    - 2048
-    - Games với chance nodes
+    --------
+    - Deterministic games: Connect4, Chess, Go (use_chance_encoder=False)
+    - Stochastic games: 2048, Backgammon, Poker (use_chance_encoder=True)
+    - Board games: Connect4, Chess, Breakthrough
+    - Atari games: với downsample=True
+    - Games với chance nodes: 2048, dice games
+    
+    Components:
+    -----------
+    1. Representation Network: h(observation) → hidden_state
+    2. Dynamics Network: g(hidden_state, action) → (next_hidden_state, reward)
+    3. Prediction Network: f(hidden_state) → (policy, value)
+    4. [Optional] Chance Encoder: encode stochastic outcomes
+    5. [Optional] Afterstate Networks: xử lý afterstates (trước chance events)
+    
+    Architecture Modes:
+    -------------------
+    
+    📌 MODE 1: Deterministic MuZero (cho Connect4, Chess, Go)
+    --------------------------------------------------------
+    use_chance_encoder=False
+    use_afterstate=False
+    use_gaussian_latent=False
+    
+    → Chỉ có 3 networks cơ bản: Representation + Dynamics + Prediction
+    → Phù hợp cho games KHÔNG có random elements
+    
+    📌 MODE 2: Stochastic MuZero (cho 2048, Poker, Backgammon)
+    ----------------------------------------------------------
+    use_chance_encoder=True
+    use_afterstate=True
+    use_gaussian_latent=False (hoặc True)
+    
+    → Có đầy đủ 5+ networks để model stochastic transitions
+    → Phù hợp cho games CÓ random elements (dice, card shuffle, tile spawn)
+    
+    ═══════════════════════════════════════════════════════════════════════════
     """
     def __init__(self, 
+                 # ===== CORE PARAMETERS (Required) =====
                  observation_shape,
+                 # Shape của observation input
+                 # - Spatial: (channels, height, width) ví dụ: (3, 6, 7) cho Connect4
+                 # - Vector: (features,) ví dụ: (128,) cho feature vector
+                 
                  action_space_size,
+                 # Số lượng actions có thể
+                 # - Connect4: 7 (7 columns)
+                 # - Chess: ~4672 (all possible moves)
+                 # - 2048: 4 (up, down, left, right)
+                 
+                 # ===== STOCHASTIC PARAMETERS =====
                  chance_space_size=2,
+                 # Số lượng possible chance outcomes (chỉ dùng khi use_chance_encoder=True)
+                 # - 2048: ~16 (số positions có thể spawn tile)
+                 # - Dice game: 6 (1-6)
+                 # - Backgammon: ~36 (dice combinations)
+                 # ⚠️ IGNORED nếu use_chance_encoder=False
+                 
+                 # ===== NETWORK ARCHITECTURE =====
                  num_res_blocks=1,
+                 # Số ResNet blocks trong mỗi network
+                 # - Small: 1-2 (fast, ít params)
+                 # - Medium: 4-6 (balanced)
+                 # - Large: 9-16 (slow, nhiều params)
+                 # Trade-off: accuracy vs speed vs memory
+                 
                  num_channels=64,
+                 # Số hidden channels trong networks
+                 # - Small: 32-64 (fast)
+                 # - Medium: 64-128 (balanced)
+                 # - Large: 128-256 (powerful)
+                 # Ảnh hưởng lớn đến model size: O(num_channels²)
+                 
+                 # ===== HEAD ARCHITECTURE =====
                  reward_head_channels=16,
+                 # Channels cho reward prediction head
+                 
                  value_head_channels=16,
+                 # Channels cho value prediction head
+                 
                  policy_head_channels=16,
+                 # Channels cho policy prediction head
+                 
                  reward_head_hidden_channels=[32],
+                 # Hidden layers trong reward MLP
+                 # - [32]: 1 hidden layer với 32 units
+                 # - [64, 32]: 2 hidden layers
+                 
                  value_head_hidden_channels=[32],
+                 # Hidden layers trong value MLP
+                 
                  policy_head_hidden_channels=[32],
+                 # Hidden layers trong policy MLP
+                 
+                 # ===== CATEGORICAL DISTRIBUTION =====
                  reward_support_range=(-300., 301., 1.),
+                 # Support range cho categorical reward distribution
+                 # Format: (min, max, step)
+                 # - (-300, 301, 1): 601 bins từ -300 đến 300
+                 # - (-10, 11, 1): 21 bins từ -10 đến 10 (cho Connect4)
+                 # Nhỏ hơn = ít bins = faster, ít memory
+                 
                  value_support_range=(-300., 301., 1.),
+                 # Support range cho categorical value distribution
+                 # Tương tự reward_support_range
+                 
+                 # ===== FEATURE TOGGLES (Bật/Tắt các tính năng) =====
                  use_chance_encoder=True,
+                 # 🎲 Bật Chance Encoder cho stochastic games
+                 # - True: Dùng cho 2048, Poker, Backgammon (có random)
+                 # - False: Dùng cho Connect4, Chess, Go (deterministic)
+                 # ⚠️ Nếu False → ignore chance_space_size, use_afterstate
+                 
                  use_afterstate=True,
+                 # 🎯 Bật Afterstate Networks (cần use_chance_encoder=True)
+                 # Afterstate = state SAU action TRƯỚC chance outcome
+                 # - True: Model afterstates riêng (chính xác hơn cho stochastic)
+                 # - False: Không model afterstates (đơn giản hơn)
+                 # Example (2048):
+                 #   State → Action (slide) → Afterstate → Chance (spawn) → Next State
+                 
                  use_categorical=True,
+                 # 📊 Dùng categorical distribution thay vì scalar
+                 # - True: Values/Rewards là distributions (chính xác hơn, LightZero style)
+                 # - False: Values/Rewards là scalars (đơn giản hơn, original MuZero)
+                 # Categorical distribution giúp model học tốt hơn trong trường hợp:
+                 #   + Multi-modal distributions
+                 #   + Long-tail rewards
+                 #   + Stochastic environments
+                 
                  use_gaussian_latent=False,
+                 # 🌀 Dùng Gaussian latent variables trong dynamics
+                 # - True: Dynamics có latent variables z ~ N(μ, σ²) (stochastic)
+                 # - False: Dynamics deterministic (đơn giản)
+                 # ⚠️ Experimental feature, thường để False
+                 
                  latent_dim=None,
+                 # Dimension của latent variables (nếu use_gaussian_latent=True)
+                 # - None: không dùng latent
+                 # - 16, 32, 64: latent dimension
+                 
                  downsample=False,
+                 # 🖼️ Downsample input observations (cho Atari)
+                 # - True: Giảm spatial resolution (84x84 → 21x21)
+                 # - False: Giữ nguyên resolution
+                 # Dùng cho Atari để giảm computation
+                 
                  self_supervised_learning_loss=False,
+                 # 🔬 Thêm self-supervised learning losses
+                 # - True: Thêm auxiliary losses (contrastive, reconstruction)
+                 # - False: Chỉ dùng RL losses
+                 # ⚠️ Chưa implement đầy đủ
+                 
                  device='cpu'):
+                 # 🖥️ Device để chạy model
+                 # - 'cpu': CPU (chậm)
+                 # - 'cuda': GPU (nhanh)
+                 # - 'cuda:0', 'cuda:1': Specific GPU
         super().__init__()
         
         self.observation_shape = observation_shape
