@@ -1,7 +1,7 @@
 import math
 from alphazero.model import ResNet, weights_init_normal
 import torch
-from games import ConnectFour, Breakthrough
+from games import ConnectFour, Breakthrough, TicTacToe, Havannah, Y, Stochastic_ConnectFour, Stochastic_Breakthrough, Stochastic_TicTacToe, Stochastic_Havannah, Stochastic_Y
 from alphazero import AlphaZero
 from mcts import PUCT, Stochastic_Powermean_UCT
 import argparse
@@ -14,9 +14,33 @@ def create_game(game):
         return ConnectFour()
     elif game == "Breakthrough":
         return Breakthrough()
+    elif game == "TicTacToe":
+        return TicTacToe()
+    elif game == "Havannah":
+        return Havannah()
+    elif game == "Y":
+        return Y()
+    elif game == "Stochastic_ConnectFour":
+        return Stochastic_ConnectFour()
+    elif game == "Stochastic_Breakthrough":
+        return Stochastic_Breakthrough()
+    elif game == "Stochastic_TicTacToe":
+        return Stochastic_TicTacToe()
+    elif game == "Stochastic_Havannah":
+        return Stochastic_Havannah()
+    elif game == "Stochastic_Y":
+        return Stochastic_Y()
 
 def create_model(game, device, args):
-    if (game.name == "ConnectFour"):
+    if (game.name == "TicTacToe" or game.name == "Stochastic_TicTacToe"):
+        model = ResNet(
+            game=game, 
+            num_resBlocks=5, 
+            num_hidden=64, 
+            device=device
+        )
+        return model
+    elif (game.name == "ConnectFour" or game.name == "Stochastic_ConnectFour"):
         model = ResNet(
             game=game, 
             num_resBlocks=9, 
@@ -24,7 +48,7 @@ def create_model(game, device, args):
             device=device
         )
         return model    
-    elif (game.name == "Breakthrough"):
+    elif (game.name == "Breakthrough" or game.name == "Stochastic_Breakthrough"):
         model = ResNet(
             game=game, 
             num_resBlocks=12, 
@@ -32,6 +56,23 @@ def create_model(game, device, args):
             device=device
         )
         return model
+    elif (game.name == "Havannah" or game.name == "Stochastic_Havannah"):
+        model = ResNet(
+            game=game, 
+            num_resBlocks=20, 
+            num_hidden=256, 
+            device=device
+        )
+        return model
+    elif (game.name == "Y" or game.name == "Stochastic_Y"):
+        model = ResNet(
+            game=game, 
+            num_resBlocks=20, 
+            num_hidden=256, 
+            device=device
+        )
+        return model
+
 
 def main(args):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -96,8 +137,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Full AlphaZero pipeline.")
     
     # Game selection
-    parser.add_argument("--game", type=str, choices=["ConnectFour", "Breakthrough"], default="ConnectFour", help="Game to train")
-    
+    parser.add_argument("--game", type=str, default="ConnectFour",
+                        choices=["ConnectFour", "Breakthrough", "TicTacToe", "Havannah", "Y",
+                                 "Stochastic_ConnectFour", "Stochastic_Breakthrough", 
+                                 "Stochastic_TicTacToe", "Stochastic_Havannah", "Stochastic_Y"],
+                        help="Game to train (default: ConnectFour).")    
     # Algorithm selection
     parser.add_argument("--algorithm", type=str, 
                         choices=["PUCT", "Stochastic_Powermean_UCT"], 

@@ -28,12 +28,17 @@ class Node:
     def select_opponent(self):
         wost_node = None
         wost_ucb = np.inf
-        
+
+        # handle stochasticity
+        if self.game.is_stochastic and np.random.rand() < self.game.randomness:
+            return np.random.choice(self.children)
+
         for node in self.children:
             ucb = self.get_ucb(node)
             if ucb < wost_ucb:
                 wost_node = node
                 wost_ucb = ucb
+
         return wost_node
     
     def get_ucb(self, node):
@@ -48,7 +53,12 @@ class Node:
         for action, prob in enumerate(policy):
             if prob > 0:
                 node_state = copy.deepcopy(self.state)
-                node_state = self.game.get_next_state(node_state, action)
+                
+                if self.game.is_stochastic:
+                    # get next state without consider randomness
+                    node_state = self.game.get_next_absolute_state(node_state, action)
+                else:
+                    node_state = self.game.get_next_state(node_state, action)
 
                 node = Node(
                     game=self.game,

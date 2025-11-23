@@ -3,12 +3,12 @@ import pyspiel
 
 import copy
 
-class Breakthrough():
+class ConnectFour():
     def __init__(self):
-        self.name = "Breakthrough"
+        self.name = "ConnectFour"
         self.num_player = 2
 
-        self.game = pyspiel.load_game("breakthrough")
+        self.game = pyspiel.load_game("connect_four")
         self.action_size = self.game.num_distinct_actions()
 
     def get_initial_state(self):

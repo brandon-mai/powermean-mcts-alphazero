@@ -3,12 +3,12 @@ import pyspiel
 
 import copy
 
-class Breakthrough():
+class TicTacToe():
     def __init__(self):
-        self.name = "Breakthrough"
+        self.name = "TicTacToe"
         self.num_player = 2
 
-        self.game = pyspiel.load_game("breakthrough")
+        self.game = pyspiel.load_game("tic_tac_toe")
         self.action_size = self.game.num_distinct_actions()
 
     def get_initial_state(self):
@@ -46,7 +46,6 @@ class Breakthrough():
         else:
             raise ValueError(f"Invalid player value: {player}. Shoule be  0 or 1.")
         return opponent_player
-    
     def get_opponent_value(self, value):
         return 1.0 - value
 

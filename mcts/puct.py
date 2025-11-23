@@ -26,6 +26,10 @@ class Node:
         worst_child = None
         worst_ucb = np.inf
         
+        # handle stochasticity
+        if self.game.is_stochastic and np.random.rand() < self.game.randomness:
+            return np.random.choice(self.children)
+
         for child in self.children:
             ucb = self.get_ucb(child)
             if ucb < worst_ucb:
@@ -46,7 +50,12 @@ class Node:
         for action, prob in enumerate(policy):
             if prob > 0:
                 child_state = copy.deepcopy(self.state)
-                child_state = self.game.get_next_state(child_state, action)
+                
+                if self.game.is_stochastic:
+                    # get next state without consider randomness
+                    child_state = self.game.get_next_absolute_state(child_state, action)
+                else:
+                    child_state = self.game.get_next_state(child_state, action)
 
                 child = Node(
                 game=self.game,

@@ -1,17 +1,17 @@
 import numpy as np
 import pyspiel
-
 import copy
 
-class ConnectFour():
+class Stochastic_TicTacToe():
     def __init__(self):
-        self.name = "ConnectFour"
+        self.name = "Stochastic_TicTacToe"
         self.num_player = 2
 
-        self.game = pyspiel.load_game("connect_four")
+        self.game = pyspiel.load_game("tic_tac_toe")
         self.action_size = self.game.num_distinct_actions()
+        self.is_stochastic = True
         
-        self.num_planes, self.row_count, self.column_count = self.game.observation_tensor_shape()
+        self.randomness = 0.50  
 
     def get_initial_state(self):
         state = self.game.new_initial_state()
@@ -23,6 +23,19 @@ class ConnectFour():
 
     def get_next_state(self, state, action):
         next_state = copy.deepcopy(state)
+        
+        actual_action = action
+        
+        if np.random.rand() < self.randomness:
+            legal_moves = state.legal_actions()
+            
+            if len(legal_moves) > 0:
+                actual_action = np.random.choice(legal_moves)
+        next_state.apply_action(actual_action)  
+        return next_state
+    
+    def get_next_absolute_state(self, state, action):
+        next_state = copy.deepcopy(state)
         next_state.apply_action(action)  
         return next_state
 
@@ -33,11 +46,11 @@ class ConnectFour():
         is_terminal = state.is_terminal()  
         if is_terminal:
             reward = state.returns()[player]
+            reward = (reward + 1) / 2
         else:
             # get intermediate reward
-            reward = state.rewards()[player]
-        # re-scale to [0, 1]
-        reward = (reward + 1) / 2
+            # because there is no intermedate reward, so by default intermedate reward is 0
+            reward =  0
         return reward, is_terminal 
 
     def get_opponent(self, player):
@@ -45,8 +58,10 @@ class ConnectFour():
             opponent_player = 1
         elif player == 1:
             opponent_player = 0
+        else:
+            raise ValueError(f"Invalid player value: {player}. Shoule be  0 or 1.")
         return opponent_player
-
+        
     def get_opponent_value(self, value):
         return 1.0 - value
 

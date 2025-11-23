@@ -7,7 +7,7 @@ sys.path.append('/content/powermean-mcts-alphazero/games')
 sys.path.append('/content/powermean-mcts-alphazero/alphazero')
 sys.path.append('/content/powermean-mcts-alphazero/mcts')
 
-from games import ConnectFour, Breakthrough
+from games import ConnectFour, Breakthrough, TicTacToe, Havannah, Y, Stochastic_ConnectFour, Stochastic_Breakthrough, Stochastic_TicTacToe, Stochastic_Havannah, Stochastic_Y
 from alphazero import ResNet
 from mcts import Stochastic_Powermean_UCT, PUCT
 
@@ -22,7 +22,23 @@ def create_game(game):
         return ConnectFour()
     elif game == "Breakthrough":
         return Breakthrough()
-
+    elif game == "TicTacToe":
+        return TicTacToe()
+    elif game == "Havannah":
+        return Havannah()
+    elif game == "Y":
+        return Y()
+    elif game == "Stochastic_ConnectFour":
+        return Stochastic_ConnectFour()
+    elif game == "Stochastic_Breakthrough":
+        return Stochastic_Breakthrough()
+    elif game == "Stochastic_TicTacToe":
+        return Stochastic_TicTacToe()
+    elif game == "Stochastic_Havannah":
+        return Stochastic_Havannah()
+    elif game == "Stochastic_Y":
+        return Stochastic_Y()
+    
 def create_mcts(algorithm, game, model, args):
     if algorithm == "PUCT":
         return PUCT(
@@ -166,8 +182,10 @@ if __name__ == "__main__":
     parser.add_argument("--checkpoint_path", type=str, required=True, 
                         help="Path to the model checkpoint.")
     parser.add_argument("--game", type=str, default="ConnectFour",
-                        choices=["ConnectFour", "Breakthrough"],
-                        help="game to player (default: ConnectFour).")                     
+                        choices=["ConnectFour", "Breakthrough", "TicTacToe", "Havannah", "Y",
+                                 "Stochastic_ConnectFour", "Stochastic_Breakthrough", 
+                                 "Stochastic_TicTacToe", "Stochastic_Havannah", "Stochastic_Y"],
+                        help="Game to play (default: ConnectFour).")  
     parser.add_argument("--algorithm", type=str, default="PUCT",
                         choices=["PUCT", "Stochastic_Powermean_UCT"],
                         help="MCTS algorithm to use (default: PUCT).")

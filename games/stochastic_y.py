@@ -1,15 +1,17 @@
 import numpy as np
 import pyspiel
-
 import copy
 
-class Breakthrough():
+class Stochastic_Y():
     def __init__(self):
-        self.name = "Breakthrough"
+        self.name = "Stochastic_Y"
         self.num_player = 2
 
-        self.game = pyspiel.load_game("breakthrough")
+        self.game = pyspiel.load_game("y")
         self.action_size = self.game.num_distinct_actions()
+        self.is_stochastic = True
+        
+        self.randomness = 0.50  
 
     def get_initial_state(self):
         state = self.game.new_initial_state()
@@ -20,6 +22,19 @@ class Breakthrough():
         return player
 
     def get_next_state(self, state, action):
+        next_state = copy.deepcopy(state)
+        
+        actual_action = action
+        
+        if np.random.rand() < self.randomness:
+            legal_moves = state.legal_actions()
+            
+            if len(legal_moves) > 0:
+                actual_action = np.random.choice(legal_moves)
+        next_state.apply_action(actual_action)  
+        return next_state
+    
+    def get_next_absolute_state(self, state, action):
         next_state = copy.deepcopy(state)
         next_state.apply_action(action)  
         return next_state
@@ -46,7 +61,7 @@ class Breakthrough():
         else:
             raise ValueError(f"Invalid player value: {player}. Shoule be  0 or 1.")
         return opponent_player
-    
+        
     def get_opponent_value(self, value):
         return 1.0 - value
 

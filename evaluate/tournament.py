@@ -1,13 +1,14 @@
 import torch
 import numpy as np
-import argparse, sys, itertools, time, json, os
+import argparse, sys, itertools, time, json, os, random, string
+from collections import defaultdict
 
-sys.path.append('/content/powermean-mcts-alphazero/')
-sys.path.append('/content/powermean-mcts-alphazero/games')
-sys.path.append('/content/powermean-mcts-alphazero/alphazero')
-sys.path.append('/content/powermean-mcts-alphazero/mcts')
+sys.path.append('powermean-mcts-alphazero/')
+sys.path.append('powermean-mcts-alphazero/games')
+sys.path.append('powermean-mcts-alphazero/alphazero')
+sys.path.append('powermean-mcts-alphazero/mcts')
 
-from games import ConnectFour, Breakthrough
+from games import ConnectFour, Breakthrough, TicTacToe, Havannah, Y, Stochastic_ConnectFour, Stochastic_Breakthrough, Stochastic_TicTacToe, Stochastic_Havannah, Stochastic_Y
 from alphazero import ResNet
 from mcts import Stochastic_Powermean_UCT, PUCT
 
@@ -17,13 +18,32 @@ class SPG:
         self.state = game.get_initial_state()
         self.memory = []
 
+def random_suffix(k=6):
+    return ''.join(random.choices(string.ascii_lowercase + string.digits, k=k))
+
 def create_game(game):
     if game == "ConnectFour":
         return ConnectFour()
     elif game == "Breakthrough":
         return Breakthrough()
+    elif game == "TicTacToe":
+        return TicTacToe()
+    elif game == "Havannah":
+        return Havannah()
+    elif game == "Y":
+        return Y()
+    elif game == "Stochastic_ConnectFour":
+        return Stochastic_ConnectFour()
+    elif game == "Stochastic_Breakthrough":
+        return Stochastic_Breakthrough()
+    elif game == "Stochastic_TicTacToe":
+        return Stochastic_TicTacToe()
+    elif game == "Stochastic_Havannah":
+        return Stochastic_Havannah()
+    elif game == "Stochastic_Y":
+        return Stochastic_Y()
 
-def create_model(game, device, args):
+def create_model(game, device, checkpoint_path):
     if (game.name == "ConnectFour"):
         model = ResNet(
             game=game, 
@@ -31,7 +51,7 @@ def create_model(game, device, args):
             num_hidden=128, 
             device=device
         )
-        model.load_state_dict(torch.load(args.checkpoint_path, map_location=device))
+        model.load_state_dict(torch.load(checkpoint_path, map_location=device))
         model.eval()
         return model   
     elif (game.name == "Breakthrough"):
@@ -41,7 +61,7 @@ def create_model(game, device, args):
             num_hidden=128, 
             device=device
         )
-        model.load_state_dict(torch.load(args.checkpoint_path, map_location=device))
+        model.load_state_dict(torch.load(checkpoint_path, map_location=device))
         model.eval()
         return model            
 
@@ -61,7 +81,7 @@ def play_interactive(game, player1, player2, num_games_parallel, temperature):
 
     while len(spGames) > 0:
         if time.time() - last_print_time >= 30:
-            print(f"Remaining games: {len(spGames)}")
+            print(f"    [Progress] Remaining games: {len(spGames)}")
             last_print_time = time.time()
 
         if player == 0:
@@ -114,82 +134,22 @@ def play_interactive(game, player1, player2, num_games_parallel, temperature):
 
         player = game.get_opponent(player)  
 
-    print("GAME ENDED")
-    print(f"Result: Player 1 wins: {result['first_win']}, Player 2 wins: {result['second_win']}, Draws: {result['draw']}")
-    print("=" * 50)
     return result
 
-def run_tournament(args):
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    game = create_game(
-        game=args.game
-    )
-
-    MODEL_CHECKPOINT = args.checkpoint_path
-
-    print("=" * 70)
-    print("TOURNAMENT CONFIGURATION")
-    print("=" * 70)
-    print(f"Device: {device}")
-    print(f"Game: {game.name}")
-    print(f"Model checkpoint: {MODEL_CHECKPOINT}")
-
-    model = create_model(
-        game=game, 
-        device=device, 
-        args=args
-    )
-
-    mcts_list = []
+def run_single_tournament(game, mcts_list, args, run_id):
+    """Run a single tournament iteration"""
+    print(f"\n{'='*70}")
+    print(f"TOURNAMENT RUN #{run_id + 1}")
+    print(f"{'='*70}")
     
-    # add powermean
-    for p in args.p:
-        mcts_list.append(
-        {   
-            "name": f"Stochastic_Powermean_UCT_p={p}", 
-            "alphazero": Stochastic_Powermean_UCT(
-                game=game, 
-                model=model, 
-                C=args.C, 
-                p=p, 
-                gamma=args.gamma, 
-                dirichlet_epsilon=args.dirichlet_epsilon, 
-                dirichlet_alpha=args.dirichlet_alpha, 
-                num_searches=args.num_searches                
-            )
-        }
-    )
-
-    # add puct
-    mcts_list.append(
-        {
-            "name": "PUCT",
-            "alphazero": PUCT(
-                game=game, 
-                model=model, 
-                C=args.C, 
-                dirichlet_epsilon=args.dirichlet_epsilon, 
-                dirichlet_alpha=args.dirichlet_alpha, 
-                num_searches=args.num_searches
-            )
-        }        
-    )    
-
     results = {m["name"]: {"win": 0, "loss": 0, "draw": 0} for m in mcts_list}
     num_games_per_pair = args.num_games_per_pair
 
-    print("=" * 70)
-    print("TOURNAMENT START")
-    print("=" * 70)
-
     for m1, m2 in itertools.combinations(mcts_list, 2):
-        print(f"\n{'=' * 70}")
-        print(f"MATCHUP: {m1['name']} vs {m2['name']}")
-        print(f"{'=' * 70}")
+        print(f"\n  Matchup: {m1['name']} vs {m2['name']}")
 
         for batch_idx in range(num_games_per_pair // args.num_games_parallel):
-            print(f"\n--- Round {batch_idx + 1}/{num_games_per_pair // args.num_games_parallel} ---")
-            print(f"Game 1: {m1['name']} (Player 1) vs {m2['name']} (Player 2)")
+            # Game 1: m1 as Player 1
             result = play_interactive(
                 game=game, 
                 player1=m1, 
@@ -206,7 +166,7 @@ def run_tournament(args):
             results[m2["name"]]["loss"] += result["first_win"]
             results[m2["name"]]["draw"] += result["draw"]
 
-            print(f"\nGame 2: {m2['name']} (Player 1) vs {m1['name']} (Player 2)")
+            # Game 2: m2 as Player 1
             result = play_interactive(
                 game=game, 
                 player1=m2, 
@@ -223,51 +183,212 @@ def run_tournament(args):
             results[m1["name"]]["loss"] += result["first_win"]
             results[m1["name"]]["draw"] += result["draw"]
 
-        print(f"\nFinished matchup: {m1['name']} vs {m2['name']}")
-        print(f"Current standings:")
-        print(f"  {m1['name']}: {results[m1['name']]}")
-        print(f"  {m2['name']}: {results[m2['name']]}")
+    return results
 
-    print("\n" + "=" * 70)
-    print("FINAL TOURNAMENT RESULTS")
-    print("=" * 70)
-    result = []
-    for name, record in results.items():
-        total_games = record["win"] + record["loss"] + record["draw"]
-        win_rate = (record["win"] / total_games * 100) if total_games > 0 else 0
-        print(f"{name}:")
-        print(f"  Wins: {record['win']}")
-        print(f"  Losses: {record['loss']}")
-        print(f"  Draws: {record['draw']}")
-        print(f"  Win Rate: {win_rate:.2f}%")
-        result.append(
-            {
-                "name": name,
-                "Wins": record['win'],
-                "Losses": record['loss'],
-                "Draws": record['draw'],
-            }
-        )
-        print("-" * 50)
+def aggregate_results(all_runs_results):
+    """Aggregate results from multiple runs"""
+    aggregated = defaultdict(lambda: {"win": [], "loss": [], "draw": []})
     
+    for run_results in all_runs_results:
+        for name, record in run_results.items():
+            aggregated[name]["win"].append(record["win"])
+            aggregated[name]["loss"].append(record["loss"])
+            aggregated[name]["draw"].append(record["draw"])
+    
+    # Calculate statistics
+    final_results = {}
+    for name, records in aggregated.items():
+        wins = np.array(records["win"])
+        losses = np.array(records["loss"])
+        draws = np.array(records["draw"])
+        total_games = wins + losses + draws
+        win_rates = (wins / total_games * 100)
+        
+        final_results[name] = {
+            "win_mean": float(np.mean(wins)),
+            "win_std": float(np.std(wins)),
+            "loss_mean": float(np.mean(losses)),
+            "loss_std": float(np.std(losses)),
+            "draw_mean": float(np.mean(draws)),
+            "draw_std": float(np.std(draws)),
+            "win_rate_mean": float(np.mean(win_rates)),
+            "win_rate_std": float(np.std(win_rates)),
+            "all_runs": {
+                "wins": wins.tolist(),
+                "losses": losses.tolist(),
+                "draws": draws.tolist(),
+                "win_rates": win_rates.tolist()
+            }
+        }
+    
+    return final_results
+
+def run_tournament(args):
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    game = create_game(game=args.game)
 
     print("=" * 70)
-    print("TOURNAMENT COMPLETED")
+    print("MULTI-TOURNAMENT CONFIGURATION")
+    print("=" * 70)
+    print(f"Device: {device}")
+    print(f"Game: {game.name}")
+    print(f"Number of checkpoints: {len(args.checkpoint_paths)}")
+    print(f"Number of runs per checkpoint: {args.num_runs}")
+    print(f"Checkpoints:")
+    for i, cp in enumerate(args.checkpoint_paths, 1):
+        print(f"  {i}. {cp}")
     print("=" * 70)
 
+    # Process each checkpoint
+    all_checkpoint_results = {}
+    
+    for checkpoint_idx, checkpoint_path in enumerate(args.checkpoint_paths):
+        print(f"\n{'#'*70}")
+        print(f"PROCESSING CHECKPOINT {checkpoint_idx + 1}/{len(args.checkpoint_paths)}")
+        print(f"Path: {checkpoint_path}")
+        print(f"{'#'*70}")
+        
+        # Load model for this checkpoint
+        model = create_model(game=game, device=device, checkpoint_path=checkpoint_path)
+        
+        # Create MCTS list for this checkpoint
+        mcts_list = []
+        
+        # Add powermean variants
+        for p in args.p:
+            mcts_list.append({   
+                "name": f"Stochastic_Powermean_UCT_p={p}", 
+                "alphazero": Stochastic_Powermean_UCT(
+                    game=game, 
+                    model=model, 
+                    C=args.C, 
+                    p=p, 
+                    gamma=args.gamma, 
+                    dirichlet_epsilon=args.dirichlet_epsilon, 
+                    dirichlet_alpha=args.dirichlet_alpha, 
+                    num_searches=args.num_searches                
+                )
+            })
+
+        # Add PUCT
+        mcts_list.append({
+            "name": "PUCT",
+            "alphazero": PUCT(
+                game=game, 
+                model=model, 
+                C=args.C, 
+                dirichlet_epsilon=args.dirichlet_epsilon, 
+                dirichlet_alpha=args.dirichlet_alpha, 
+                num_searches=args.num_searches
+            )
+        })
+        
+        # Run multiple tournaments for this checkpoint
+        all_runs_results = []
+        for run_id in range(args.num_runs):
+            run_results = run_single_tournament(game, mcts_list, args, run_id)
+            all_runs_results.append(run_results)
+            
+            # Print current run summary
+            print(f"\n  Run #{run_id + 1} Summary:")
+            for name, record in run_results.items():
+                total = record["win"] + record["loss"] + record["draw"]
+                wr = (record["win"] / total * 100) if total > 0 else 0
+                print(f"    {name}: W={record['win']}, L={record['loss']}, D={record['draw']}, WR={wr:.2f}%")
+        
+        # Aggregate results for this checkpoint
+        checkpoint_results = aggregate_results(all_runs_results)
+        checkpoint_name = os.path.basename(checkpoint_path)
+        all_checkpoint_results[checkpoint_name] = checkpoint_results
+        
+        # Print checkpoint summary
+        print(f"\n{'='*70}")
+        print(f"CHECKPOINT SUMMARY: {checkpoint_name}")
+        print(f"{'='*70}")
+        for name, stats in checkpoint_results.items():
+            print(f"{name}:")
+            print(f"  Win Rate: {stats['win_rate_mean']:.2f}% ± {stats['win_rate_std']:.2f}%")
+            print(f"  Wins: {stats['win_mean']:.1f} ± {stats['win_std']:.1f}")
+            print(f"  Losses: {stats['loss_mean']:.1f} ± {stats['loss_std']:.1f}")
+            print(f"  Draws: {stats['draw_mean']:.1f} ± {stats['draw_std']:.1f}")
+            print("-" * 50)
+        
+        # Save individual checkpoint results
+        os.makedirs("breakthrough_search_50", exist_ok=True)
+        checkpoint_basename = os.path.splitext(checkpoint_name)[0]  # Remove .pt extension
+
+        suffix = random_suffix()
+        individual_json_path = f"breakthrough_search_50/{checkpoint_basename}_search{args.num_searches}_runs{args.num_runs}_{suffix}.json"        
+
+        individual_save_data = {
+            "config": {
+                "game": args.game,
+                "checkpoint": checkpoint_path,
+                "num_runs": args.num_runs,
+                "num_searches": args.num_searches,
+                "C": args.C,
+                "p_values": args.p,
+                "gamma": args.gamma,
+                "num_games_per_pair": args.num_games_per_pair,
+                "num_games_parallel": args.num_games_parallel,
+                "temperature": args.temperature
+            },
+            "results": checkpoint_results
+        }
+        
+        with open(individual_json_path, "w") as f:
+            json.dump(individual_save_data, f, indent=4)
+        
+        print(f"Checkpoint results saved to: {individual_json_path}")
+
+    # Final summary across all checkpoints
+    print(f"\n{'#'*70}")
+    print("FINAL SUMMARY - ALL CHECKPOINTS")
+    print(f"{'#'*70}")
+    
+    for checkpoint_name, results in all_checkpoint_results.items():
+        print(f"\n{checkpoint_name}:")
+        for name, stats in results.items():
+            print(f"  {name}: WR={stats['win_rate_mean']:.2f}%±{stats['win_rate_std']:.2f}%")
+
+    # Save results
     os.makedirs("evaluate_result", exist_ok=True)
-    json_file_path = f"evaluate_result/{game.name}_model_{args.checkpoint_path.split('/')[-1]}.json"
+
+    suffix = random_suffix()
+    json_file_path = f"evaluate_result/summary_search{args.num_searches}_runs{args.num_runs}_{suffix}.json"    
+
+    save_data = {
+        "config": {
+            "game": args.game,
+            "num_runs": args.num_runs,
+            "num_searches": args.num_searches,
+            "C": args.C,
+            "p_values": args.p,
+            "gamma": args.gamma,
+            "num_games_per_pair": args.num_games_per_pair,
+            "checkpoints": args.checkpoint_paths
+        },
+        "results": all_checkpoint_results
+    }
+    
     with open(json_file_path, "w") as f:
-        json.dump(result, f, indent=4)
+        json.dump(save_data, f, indent=4)
+    
+    print(f"\n{'='*70}")
     print(f"Results saved to {json_file_path}")
+    print(f"{'='*70}")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Tournament.")
+    parser = argparse.ArgumentParser(description="Multi-checkpoint Tournament with Multiple Runs.")
     parser.add_argument("--game", type=str, default="ConnectFour",
-                        choices=["ConnectFour", "Breakthrough"],
-                        help="game to player (default: ConnectFour).")    
-    parser.add_argument("--checkpoint_path", type=str, required=True, 
-                        help="Path to the model checkpoint.")
+                        choices=["ConnectFour", "Breakthrough", "TicTacToe", "Havannah", "Y",
+                                 "Stochastic_ConnectFour", "Stochastic_Breakthrough", 
+                                 "Stochastic_TicTacToe", "Stochastic_Havannah", "Stochastic_Y"],
+                        help="Game to play (default: ConnectFour).")    
+    parser.add_argument("--checkpoint_paths", type=str, nargs='+', required=True, 
+                        help="List of paths to model checkpoints.")
+    parser.add_argument("--num_runs", type=int, default=3,
+                        help="Number of times to run tournament for each checkpoint (default: 3).")
     parser.add_argument("--num_searches", type=int, default=600, 
                         help="Number of MCTS searches per bot move (default: 600).")
     parser.add_argument("--C", type=float, default=1.41, 
