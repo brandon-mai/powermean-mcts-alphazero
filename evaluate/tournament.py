@@ -314,7 +314,7 @@ def run_tournament(args):
             print("-" * 50)
         
         # Save individual checkpoint results
-        os.makedirs("breakthrough_search_50", exist_ok=True)
+        os.makedirs("individual_result", exist_ok=True)
         checkpoint_basename = os.path.splitext(checkpoint_name)[0]  # Remove .pt extension
 
         suffix = random_suffix()
