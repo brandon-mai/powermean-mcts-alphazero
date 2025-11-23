@@ -9,6 +9,8 @@ class Stochastic_ConnectFour():
 
         self.game = pyspiel.load_game("connect_four")
         self.action_size = self.game.num_distinct_actions()
+        self.num_planes, self.row_count, self.column_count = self.game.observation_tensor_shape()
+        
         self.is_stochastic = True
         
         self.randomness = 0.50  
