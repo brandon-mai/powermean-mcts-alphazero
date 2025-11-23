@@ -318,7 +318,7 @@ def run_tournament(args):
         checkpoint_basename = os.path.splitext(checkpoint_name)[0]  # Remove .pt extension
 
         suffix = random_suffix()
-        individual_json_path = f"breakthrough_search_50/{checkpoint_basename}_search{args.num_searches}_runs{args.num_runs}_{suffix}.json"        
+        individual_json_path = f"individual_result/{checkpoint_basename}_search{args.num_searches}_runs{args.num_runs}_{suffix}.json"        
 
         individual_save_data = {
             "config": {
