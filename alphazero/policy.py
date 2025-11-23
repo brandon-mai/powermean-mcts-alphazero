@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 import torch.nn.functional as F
-import random, os, copy
+import random, os, copy, time
 
 class AlphaZero:
     def __init__(self, model, optimizer, game, mcts,
@@ -20,69 +20,75 @@ class AlphaZero:
         self.num_iterations = num_iterations
         self.num_selfPlay_iterations = num_selfPlay_iterations
         self.num_epochs = num_epochs
-
     def selfPlay(self):
-        print("------------------------------------------------------------")
-        print("Starting self-play phase...")
-        return_memory = []
-        player = self.game.get_current_player(
-            self.game.get_initial_state()
-        )
-        
-        spGames = [SPG(self.game) for _ in range(self.num_parallel_games)]
-        total_moves = 0
-        completed_games = 0
+            print("------------------------------------------------------------")
+            print("Starting self-play phase...")
+            return_memory = []
+            player = self.game.get_current_player(
+                self.game.get_initial_state()
+            )
+            
+            spGames = [SPG(self.game) for _ in range(self.num_parallel_games)]
+            total_moves = 0
+            completed_games = 0
+            
+            last_print_time = time.time() 
+            print_interval = 30 
 
-        while len(spGames) > 0:
-            states = [spg.state for spg in spGames]
-            self.mcts.search(states, spGames)
+            while len(spGames) > 0:
+                states = [spg.state for spg in spGames]
+                self.mcts.search(states, spGames)
 
-            for i in range(len(spGames))[::-1]:
-                spg = spGames[i]
-                action_probs = np.zeros(self.game.action_size)
+                for i in range(len(spGames))[::-1]:
+                    spg = spGames[i]
+                    action_probs = np.zeros(self.game.action_size)
 
-                for child in spg.root.children:
-                    action_probs[child.action_taken] = child.visit_count
+                    for child in spg.root.children:
+                        action_probs[child.action_taken] = child.visit_count
 
-                action_probs /= np.sum(action_probs)
-                spg.memory.append((copy.deepcopy(spg.root.state), action_probs, player))
+                    action_probs /= np.sum(action_probs)
+                    spg.memory.append((copy.deepcopy(spg.root.state), action_probs, player))
 
-                temperature_action_probs = action_probs ** (1 / self.temperature)
-                if np.sum(temperature_action_probs) == 0:
-                    temperature_action_probs = np.ones_like(temperature_action_probs) / len(temperature_action_probs)
-                else:
-                    temperature_action_probs /= np.sum(temperature_action_probs)
-                
-                action = np.random.choice(self.game.action_size, p=temperature_action_probs)
-                spg.state = self.game.get_next_state(spg.state, action)
+                    temperature_action_probs = action_probs ** (1 / self.temperature)
+                    if np.sum(temperature_action_probs) == 0:
+                        temperature_action_probs = np.ones_like(temperature_action_probs) / len(temperature_action_probs)
+                    else:
+                        temperature_action_probs /= np.sum(temperature_action_probs)
+                    
+                    action = np.random.choice(self.game.action_size, p=temperature_action_probs)
+                    spg.state = self.game.get_next_state(spg.state, action)
 
-                value, is_terminal = self.game.get_value_and_terminated(
-                    state=spg.state, 
-                    player=player)
-                
-                if is_terminal:
-                    completed_games += 1
-                    for hist_neutral_state, hist_action_probs, hist_player in spg.memory:
-                        hist_outcome = value if hist_player == player else self.game.get_opponent_value(value)
-                        return_memory.append((
-                            hist_neutral_state,
-                            hist_action_probs,
-                            hist_outcome
-                        ))
-                    del spGames[i]
+                    value, is_terminal = self.game.get_value_and_terminated(
+                        state=spg.state, 
+                        player=player)
+                    
+                    if is_terminal:
+                        completed_games += 1
+                        for hist_neutral_state, hist_action_probs, hist_player in spg.memory:
+                            hist_outcome = value if hist_player == player else self.game.get_opponent_value(value)
+                            return_memory.append((
+                                hist_neutral_state,
+                                hist_action_probs,
+                                hist_outcome
+                            ))
+                        del spGames[i]
 
-            player = self.game.get_opponent(player)
-            total_moves += 1
+                player = self.game.get_opponent(player)
+                total_moves += 1
 
-            if total_moves % 10 == 0:
-                print(f"[Update] Total moves simulated so far: {total_moves} | "
-                      f"Remaining active games: {len(spGames)}")
+                current_time = time.time()
+                if current_time - last_print_time >= print_interval:
+                    print(f"[PROGRESS] Elapsed: {int(current_time - last_print_time)}s | "
+                        f"Total moves simulated: {total_moves} | "
+                        f"Completed games: {completed_games} | "
+                        f"Remaining active games: {len(spGames)}")
+                    last_print_time = current_time 
 
-        print(f"Self-play completed.")
-        print(f"Total simulated moves: {total_moves}")
-        print(f"Training samples generated: {len(return_memory)}")
-        print("------------------------------------------------------------")
-        return return_memory
+            print(f"Self-play completed.")
+            print(f"Total simulated moves: {total_moves}")
+            print(f"Training samples generated: {len(return_memory)}")
+            print("------------------------------------------------------------")
+            return return_memory
 
     def train(self, memory):
         print("------------------------------------------------------------")
