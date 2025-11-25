@@ -13,7 +13,7 @@ class Stochastic_TicTacToe():
         
         self.is_stochastic = True
         
-        self.randomness = 0.50  
+        self.randomness = 0.15
 
     def get_initial_state(self):
         state = self.game.new_initial_state()
