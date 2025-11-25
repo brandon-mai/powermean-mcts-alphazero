@@ -11,9 +11,9 @@ class SPG:
         self.root = None
         self.node = None
 
-@ray.remote(num_gpus=1/16)
+@ray.remote(num_gpus=0.1, num_cpus=1) 
 class SelfPlayWorker:
-    def __init__(self, game_cls, mcts_cls, model_cls, model_args):
+    def __init__(self, game_cls, mcts_cls, model_cls, model_args, games_per_worker):
         self.game = game_cls()
         
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -21,6 +21,8 @@ class SelfPlayWorker:
         
         self.model = model_cls(**model_args).to("cuda")
         self.model.eval()
+        
+        self.games_per_worker = games_per_worker 
 
         self.mcts = mcts_cls(game=self.game, model=self.model)
 
@@ -28,45 +30,56 @@ class SelfPlayWorker:
         self.model.load_state_dict(weights)
         
         return_memory = []
-        player = self.game.get_current_player(self.game.get_initial_state())
-        spg = SPG(self.game)
+        
+        spgs = [SPG(self.game) for _ in range(self.games_per_worker)]
         
         step = 0
-        while True:
-            self.mcts.search([spg.state], [spg]) 
+        while spgs: 
+            current_states = [spg.state for spg in spgs]
+            self.mcts.search(current_states, spgs) 
+            
+            next_spgs = []
+            
+            for spg in spgs:
+                action_probs = np.zeros(self.game.action_size)
+                for child in spg.root.children:
+                    action_probs[child.action_taken] = child.visit_count
+                action_probs /= np.sum(action_probs)
+                
+                player = self.game.get_current_player(spg.state)
+                spg.memory.append((copy.deepcopy(spg.root.state), action_probs, player))
+                
+                temp_action_probs = action_probs ** (1 / temperature)
+                if np.sum(temp_action_probs) == 0: 
+                     temp_action_probs = np.ones_like(action_probs) / len(action_probs)
+                else:
+                    temp_action_probs /= np.sum(temp_action_probs)
+                    
+                action = np.random.choice(self.game.action_size, p=temp_action_probs)
+                
+                prev_state = spg.state 
+                spg.state = self.game.get_next_state(spg.state, action)
+                
 
-            action_probs = np.zeros(self.game.action_size)
-            for child in spg.root.children:
-                action_probs[child.action_taken] = child.visit_count
-            
-            action_probs /= np.sum(action_probs)
-            
-            spg.memory.append((copy.deepcopy(spg.root.state), action_probs, player))
+                current_player_at_end = self.game.get_opponent(self.game.get_current_player(prev_state))
+                value, is_terminal = self.game.get_value_and_terminated(spg.state, current_player_at_end)
 
-            temp_action_probs = action_probs ** (1 / temperature)
-            if np.sum(temp_action_probs) == 0: 
-                 temp_action_probs = np.ones_like(action_probs) / len(action_probs)
-            else:
-                temp_action_probs /= np.sum(temp_action_probs)
-
-            action = np.random.choice(self.game.action_size, p=temp_action_probs)
-            spg.state = self.game.get_next_state(spg.state, action)
+                if is_terminal:
+                    for hist_state, hist_probs, hist_player in spg.memory:
+                        hist_outcome = value if hist_player == current_player_at_end else self.game.get_opponent_value(value)
+                        return_memory.append((hist_state, hist_probs, hist_outcome))
+                else:
+                    next_spgs.append(spg)
             
-            value, is_terminal = self.game.get_value_and_terminated(spg.state, player)
-            
-            if is_terminal:
-                for hist_state, hist_probs, hist_player in spg.memory:
-                    hist_outcome = value if hist_player == player else self.game.get_opponent_value(value)
-                    return_memory.append((hist_state, hist_probs, hist_outcome))
-                return return_memory
-            
-            player = self.game.get_opponent(player)
+            spgs = next_spgs 
             step += 1
+            
+        return return_memory 
 
 class AlphaZero:
     def __init__(self, model, optimizer, game_cls, mcts_cls, model_cls, model_args,
-                 num_parallel_games, temperature, batch_size,
-                 num_iterations, num_selfPlay_iterations, num_epochs):
+                 num_parallel_games, temperature, batch_size, 
+                 num_iterations, num_selfPlay_iterations, num_epochs, games_per_worker=50):
         self.policy_name = "AlphaZero"
         
         self.game_cls = game_cls
@@ -78,20 +91,24 @@ class AlphaZero:
         self.optimizer = optimizer
         
         self.num_parallel_games = num_parallel_games 
+        self.games_per_worker = games_per_worker
+        
         self.temperature = temperature
         self.batch_size = batch_size
         self.num_iterations = num_iterations
         self.num_selfPlay_iterations = num_selfPlay_iterations 
         self.num_epochs = num_epochs
 
+
         if not ray.is_initialized():
             ray.init(ignore_reinit_error=True)
         
         print(f"Initializing {num_parallel_games} Ray workers...")
         self.workers = [
-            SelfPlayWorker.remote(game_cls, mcts_cls, model_cls, model_args) 
+            SelfPlayWorker.remote(game_cls, mcts_cls, model_cls, model_args, games_per_worker) 
             for _ in range(num_parallel_games)
         ]
+
     def selfPlay(self):
             print("------------------------------------------------------------")
             print(f"Starting distributed self-play (Ray)... Target: {self.num_selfPlay_iterations} games")
@@ -101,6 +118,8 @@ class AlphaZero:
             weights_id = ray.put(cpu_weights)
             
             memory = []
+            
+            games_completed = 0
             games_launched = 0
             worker_futures = {} 
 
@@ -108,27 +127,28 @@ class AlphaZero:
                 if games_launched < self.num_selfPlay_iterations:
                     fut = worker.play_game.remote(weights_id, self.temperature)
                     worker_futures[fut] = worker
-                    games_launched += 1
+                    games_launched += self.games_per_worker
             
             with tqdm.tqdm(total=self.num_selfPlay_iterations, desc="Self-Play", unit="game") as pbar:
-                while len(worker_futures) > 0:
+                while games_completed < self.num_selfPlay_iterations:
                     done_ids, _ = ray.wait(list(worker_futures.keys()), num_returns=1)
                     done_id = done_ids[0]
                     
                     game_memory = ray.get(done_id)
                     memory.extend(game_memory)
                     
-                    pbar.update(1)
+                    games_returned = len(game_memory) / self.games_per_worker 
+                    pbar.update(self.games_per_worker) 
+                    games_completed += self.games_per_worker
                     
-                    pbar.set_postfix(samples=len(memory))
+                    pbar.set_postfix(samples=len(memory), finished=games_completed)
                     
                     worker = worker_futures.pop(done_id)
                     
-                    if games_launched < self.num_selfPlay_iterations:
+                    if games_completed < self.num_selfPlay_iterations:
                         fut = worker.play_game.remote(weights_id, self.temperature)
                         worker_futures[fut] = worker
-                        games_launched += 1
-
+                    
             return memory
 
     def train(self, memory):

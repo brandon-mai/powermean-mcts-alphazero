@@ -22,6 +22,7 @@ class SPG:
         self.game = game
         self.state = game.get_initial_state()
         self.memory = []
+        self.root = None 
 
 def random_suffix(k=6):
     return ''.join(random.choices(string.ascii_lowercase + string.digits, k=k))
@@ -59,54 +60,87 @@ class TournamentWorker:
     def update_weights(self, weights):
         self.model.load_state_dict(weights)
 
-    def run_match(self, temperature, starting_player, 
+    def run_match(self, num_games, temperature, starting_player, 
                   mcts_cls_A, mcts_args_A, mcts_cls_B, mcts_args_B):
-        
+
         mcts_A = mcts_cls_A(game=self.game, model=self.model, **mcts_args_A)
         mcts_B = mcts_cls_B(game=self.game, model=self.model, **mcts_args_B)
-
-        state = self.game.get_initial_state()
-        player = starting_player
         
-        bots = {0: mcts_A, 1: mcts_B}
-        
-        spg_wrapper = SPG(self.game)
+        bots = {}
+        if starting_player == 0:
+            bots[0] = mcts_A 
+            bots[1] = mcts_B 
+        else:
+            bots[0] = mcts_B 
+            bots[1] = mcts_A 
 
-        while True:
-            current_bot = bots[player]
-            
-            spg_wrapper.state = state 
-            
-            current_bot.search([state], [spg_wrapper]) 
-            
-            action_probs = np.zeros(self.game.action_size)
-            if spg_wrapper.root is not None:
-                for child in spg_wrapper.root.children:
-                    action_probs[child.action_taken] = child.visit_count
-            
-            if np.sum(action_probs) == 0:
-                 action_probs = np.ones_like(action_probs) / len(action_probs)
-            else:
-                action_probs /= np.sum(action_probs)
+        spgs = [SPG(self.game) for _ in range(num_games)]
+        results = []
 
-            temp_action_probs = action_probs ** (1 / temperature)
-            temp_action_probs /= np.sum(temp_action_probs)
+        while spgs:
+            player_0_spgs = []
+            player_1_spgs = []
             
-            action = np.random.choice(self.game.action_size, p=temp_action_probs)
-            state = self.game.get_next_state(state, action)
+            for spg in spgs:
+                current_p = self.game.get_current_player(spg.state)
+                if current_p == 0:
+                    player_0_spgs.append(spg)
+                else:
+                    player_1_spgs.append(spg)
             
-            value, is_terminal = self.game.get_value_and_terminated(state, player)
-            
-            if is_terminal:
-                if value == 1.0:
-                    return {'winner': player, 'outcome': 1.0} 
-                elif value == 0.5:
-                    return {'winner': None, 'outcome': 0.5} 
-                elif value == 0.0:
-                    return {'winner': self.game.get_opponent(player), 'outcome': 1.0} 
+            if player_0_spgs:
+                states_0 = [s.state for s in player_0_spgs]
+                bots[0].search(states_0, player_0_spgs)
+                
+            if player_1_spgs:
+                states_1 = [s.state for s in player_1_spgs]
+                bots[1].search(states_1, player_1_spgs)
 
-            player = self.game.get_opponent(player)
+            next_spgs = []
+            
+            for spg in spgs:
+                action_probs = np.zeros(self.game.action_size)
+                if spg.root is not None:
+                    for child in spg.root.children:
+                        action_probs[child.action_taken] = child.visit_count
+                
+                if np.sum(action_probs) == 0:
+                     action_probs = np.ones_like(action_probs) / len(action_probs)
+                else:
+                    action_probs /= np.sum(action_probs)
 
+                temp_action_probs = action_probs ** (1 / temperature)
+                if np.sum(temp_action_probs) == 0:
+                     temp_action_probs = np.ones_like(action_probs) / len(action_probs)
+                else:
+                    temp_action_probs /= np.sum(temp_action_probs)
+                
+                action = np.random.choice(self.game.action_size, p=temp_action_probs)
+                
+                current_player_idx = self.game.get_current_player(spg.state)
+                
+                spg.state = self.game.get_next_state(spg.state, action)
+                spg.root = None 
+                
+                value, is_terminal = self.game.get_value_and_terminated(spg.state, current_player_idx)
+                
+                if is_terminal:
+                    outcome_dict = {}
+                    if value == 1.0:
+                        outcome_dict = {'winner': current_player_idx, 'outcome': 1.0}
+                    elif value == 0.0:
+                        outcome_dict = {'winner': self.game.get_opponent(current_player_idx), 'outcome': 1.0} # Opponent thắng
+                    else: 
+                        outcome_dict = {'winner': None, 'outcome': 0.5}
+                    
+                    results.append(outcome_dict)
+                else:
+                    next_spgs.append(spg)
+            
+            spgs = next_spgs
+
+        return results
+    
 def run_single_tournament_distributed(game_cls, mcts_list, args, run_id, workers, device):
     checkpoint_path = mcts_list[0]["checkpoint_path"]
     
@@ -118,41 +152,64 @@ def run_single_tournament_distributed(game_cls, mcts_list, args, run_id, workers
     ray.get([w.update_weights.remote(weights_ref) for w in workers])
     print("  Weights synchronized.")
 
-    futures = []
     run_results = {m["name"]: {"win": 0, "loss": 0, "draw": 0} for m in mcts_list}
     matchups = list(itertools.combinations(mcts_list, 2))
     
-    total_games = len(matchups) * args.num_games_per_pair * 2
-    print(f"  Scheduling {total_games} games across {len(matchups)} matchups...")
-
-    worker_index = 0
-
+    all_tasks_metadata = []
+    
+    print(f"  Generating tasks for {len(matchups)} matchups...")
+    
     for m1, m2 in matchups:
         cls_A, args_A = m1["mcts_cls"], m1["mcts_args"]
         cls_B, args_B = m2["mcts_cls"], m2["mcts_args"]
         
         for start_p in [0, 1]: 
-            for _ in range(args.num_games_per_pair):
-                worker = workers[worker_index % len(workers)]
-                worker_index += 1
+            games_remaining = args.num_games_per_pair
+            
+            while games_remaining > 0:
+                batch_size = min(games_remaining, args.games_per_worker)
                 
-                if start_p == 0:
-                    fut = worker.run_match.remote(
-                        args.temperature, 0, 
-                        cls_A, args_A, cls_B, args_B
-                    )
-                else:
-                    fut = worker.run_match.remote(
-                        args.temperature, 0, 
-                        cls_B, args_B, cls_A, args_A
-                    )
-
-                p1_name = m1["name"] if start_p == 0 else m2["name"]
-                p2_name = m2["name"] if start_p == 0 else m1["name"]
+                task_data = {
+                    "batch_size": batch_size,
+                    "temperature": args.temperature,
+                    "starting_player": 0, 
+                    "cls_A": cls_A, "args_A": args_A,
+                    "cls_B": cls_B, "args_B": args_B,
+                    "p1_name": m1["name"] if start_p == 0 else m2["name"], 
+                    "p2_name": m2["name"] if start_p == 0 else m1["name"]
+                }
                 
-                futures.append((fut, p1_name, p2_name))
+                if start_p == 1:
+                    task_data["cls_A"], task_data["cls_B"] = cls_B, cls_A
+                    task_data["args_A"], task_data["args_B"] = args_B, args_A
+                
+                all_tasks_metadata.append(task_data)
+                games_remaining -= batch_size
 
-    with tqdm.tqdm(total=total_games, desc=f"Tournament Run #{run_id + 1}") as pbar:
+    total_games_scheduled = sum(t["batch_size"] for t in all_tasks_metadata)
+    print(f"  Total tasks created: {len(all_tasks_metadata)} | Total games: {total_games_scheduled}")
+
+    futures = []
+    worker_index = 0
+    num_workers = len(workers)
+    
+    random.shuffle(all_tasks_metadata) 
+
+    for task in all_tasks_metadata:
+        worker = workers[worker_index % num_workers]
+        worker_index += 1
+        
+        fut = worker.run_match.remote(
+            task["batch_size"],
+            task["temperature"],
+            task["starting_player"],
+            task["cls_A"], task["args_A"],
+            task["cls_B"], task["args_B"]
+        )
+        
+        futures.append((fut, task["p1_name"], task["p2_name"]))
+
+    with tqdm.tqdm(total=total_games_scheduled, desc=f"Tournament Run #{run_id + 1}") as pbar:
         while futures:
             done_ids, _ = ray.wait([f[0] for f in futures], num_returns=1)
             done_id = done_ids[0]
@@ -166,21 +223,23 @@ def run_single_tournament_distributed(game_cls, mcts_list, args, run_id, workers
             fut, p1_name, p2_name = futures.pop(idx)
             
             try:
-                result = ray.get(done_id)
-                pbar.update(1)
+                batch_results = ray.get(done_id)
+                
+                for result in batch_results:
+                    pbar.update(1) 
 
-                if result['outcome'] == 1.0:
-                    if result['winner'] == 0: 
-                        run_results[p1_name]["win"] += 1
-                        run_results[p2_name]["loss"] += 1
+                    if result['outcome'] == 1.0:
+                        if result['winner'] == 0: 
+                            run_results[p1_name]["win"] += 1
+                            run_results[p2_name]["loss"] += 1
+                        else: 
+                            run_results[p2_name]["win"] += 1
+                            run_results[p1_name]["loss"] += 1
                     else: 
-                        run_results[p2_name]["win"] += 1
-                        run_results[p1_name]["loss"] += 1
-                elif result['outcome'] == 0.5:
-                    run_results[p1_name]["draw"] += 1
-                    run_results[p2_name]["draw"] += 1
+                        run_results[p1_name]["draw"] += 1
+                        run_results[p2_name]["draw"] += 1
             except Exception as e:
-                print(f"Error in game: {e}")
+                print(f"Error in batch task: {e}")
 
     return run_results
 
@@ -234,6 +293,7 @@ def run_tournament(args):
     model_cls, model_config = get_model_config_and_class(args.game)
     
     num_gpus = torch.cuda.device_count()
+    # Tính toán GPU: Mỗi worker chiếm bao nhiêu GPU
     gpu_per_worker = (num_gpus / args.num_games_parallel) if num_gpus > 0 else 0
     WorkerRemote = TournamentWorker.options(num_gpus=gpu_per_worker)
 
@@ -342,8 +402,13 @@ if __name__ == "__main__":
     parser.add_argument("--dirichlet_epsilon", type=float, default=0.0) 
     parser.add_argument("--dirichlet_alpha", type=float, default=0.3)
     parser.add_argument("--num_games_per_pair", type=int, default=10)
+    
+    parser.add_argument("--games_per_worker", type=int, default=10, 
+                        help="Number of games to run in parallel inside one worker task.")
+    
     parser.add_argument("--num_games_parallel", type=int, default=4)
     parser.add_argument("--temperature", type=float, default=0.01) 
     
     args = parser.parse_args()
+    
     run_tournament(args)
