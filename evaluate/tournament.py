@@ -44,7 +44,7 @@ def create_game(game):
         return Stochastic_Y()
 
 def create_model(game, device, checkpoint_path):
-    if (game.name == "ConnectFour"):
+    if (game.name == "ConnectFour") or (game.name == "Stochastic_ConnectFour"):
         model = ResNet(
             game=game, 
             num_resBlocks=9, 
@@ -54,7 +54,7 @@ def create_model(game, device, checkpoint_path):
         model.load_state_dict(torch.load(checkpoint_path, map_location=device))
         model.eval()
         return model   
-    elif (game.name == "Breakthrough"):
+    elif (game.name == "Breakthrough") or (game.name == "Stochastic_Breakthrough"):
         model = ResNet(
             game=game, 
             num_resBlocks=12, 
@@ -63,7 +63,37 @@ def create_model(game, device, checkpoint_path):
         )
         model.load_state_dict(torch.load(checkpoint_path, map_location=device))
         model.eval()
-        return model            
+        return model 
+    elif (game.name == "TicTacToe") or (game.name == "Stochastic_TicTacToe"):
+        model = ResNet(
+            game=game, 
+            num_resBlocks=5, 
+            num_hidden=64, 
+            device=device
+        )
+        model.load_state_dict(torch.load(checkpoint_path, map_location=device))
+        model.eval()
+        return model   
+    elif (game.name == "Havannah") or (game.name == "Stochastic_Havannah"):
+        model = ResNet(
+            game=game, 
+            num_resBlocks=20, 
+            num_hidden=256, 
+            device=device
+        )
+        model.load_state_dict(torch.load(checkpoint_path, map_location=device))
+        model.eval()
+        return model  
+    elif (game.name == "Y") or (game.name == "Stochastic_Y"):
+        model = ResNet(
+            game=game, 
+            num_resBlocks=20, 
+            num_hidden=256, 
+            device=device
+        )
+        model.load_state_dict(torch.load(checkpoint_path, map_location=device))
+        model.eval()
+        return model                    
 
 def play_interactive(game, player1, player2, num_games_parallel, temperature): 
     result = {
