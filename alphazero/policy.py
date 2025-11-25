@@ -92,37 +92,44 @@ class AlphaZero:
             SelfPlayWorker.remote(game_cls, mcts_cls, model_cls, model_args) 
             for _ in range(num_parallel_games)
         ]
-
     def selfPlay(self):
-        print("------------------------------------------------------------")
-        print(f"Starting distributed self-play (Ray)... Target: {self.num_parallel_games} games")
-        
-        model_weights = self.model.state_dict()
-        cpu_weights = {k: v.cpu() for k, v in model_weights.items()}
-        weights_id = ray.put(cpu_weights)
+            print("------------------------------------------------------------")
+            print(f"Starting distributed self-play (Ray)... Target: {self.num_selfPlay_iterations} games")
+            
+            model_weights = self.model.state_dict()
+            cpu_weights = {k: v.cpu() for k, v in model_weights.items()}
+            weights_id = ray.put(cpu_weights)
+            
+            memory = []
+            games_launched = 0
+            worker_futures = {} 
 
-        memory = []
-        
-        games_launched = 0
-        futures = []
-
-        for i, worker in enumerate(self.workers):
-            if games_launched < self.num_parallel_games:
-                futures.append(worker.play_game.remote(weights_id, self.temperature))
-                games_launched += 1
-
-        with tqdm.tqdm(total=self.num_parallel_games, desc="Self-Play") as pbar:
-            while len(futures) > 0:
-                done_id, futures = ray.wait(futures, num_returns=1)
-                
-                result = ray.get(done_id[0])
-                memory.extend(result)
-                pbar.update(1)
-
+            for i, worker in enumerate(self.workers):
                 if games_launched < self.num_selfPlay_iterations:
-                    pass 
+                    fut = worker.play_game.remote(weights_id, self.temperature)
+                    worker_futures[fut] = worker
+                    games_launched += 1
+            
+            with tqdm.tqdm(total=self.num_selfPlay_iterations, desc="Self-Play", unit="game") as pbar:
+                while len(worker_futures) > 0:
+                    done_ids, _ = ray.wait(list(worker_futures.keys()), num_returns=1)
+                    done_id = done_ids[0]
+                    
+                    game_memory = ray.get(done_id)
+                    memory.extend(game_memory)
+                    
+                    pbar.update(1)
+                    
+                    pbar.set_postfix(samples=len(memory))
+                    
+                    worker = worker_futures.pop(done_id)
+                    
+                    if games_launched < self.num_selfPlay_iterations:
+                        fut = worker.play_game.remote(weights_id, self.temperature)
+                        worker_futures[fut] = worker
+                        games_launched += 1
 
-        return memory
+            return memory
 
     def train(self, memory):
         print("------------------------------------------------------------")
@@ -179,11 +186,9 @@ class AlphaZero:
             memory = []
             
             self.model.eval()
-            for i in range(self.num_selfPlay_iterations // self.num_parallel_games):
-                print(f"--- Running self-play batch {i + 1}/{self.num_selfPlay_iterations // self.num_parallel_games} ---")
-                memory += self.selfPlay()
-            print("All self-play games completed. Starting model training.")
             
+            memory += self.selfPlay()
+            print("All self-play games completed. Starting model training.")
             self.model.train()
             for epoch in range(self.num_epochs):
                 print(f"--- Training epoch {epoch + 1}/{self.num_epochs} ---")
@@ -191,7 +196,10 @@ class AlphaZero:
 
             os.makedirs("checkpoint", exist_ok=True)
             torch.save(self.model.state_dict(), 
-                       f"checkpoint/policy {self.policy_name}_mtcs {self.mcts.name}_game {self.game.name}_num_parallel_games {self.num_parallel_games}_num_selfPlay_iterations {self.num_selfPlay_iterations}_batch_size {self.batch_size}_num_epochs {self.num_epochs}_num_searches {self.num_searches}_iteration {iteration + 1}.pt")
+                        f"checkpoint/policy_{self.policy_name}_"
+                        f"game_{self.game_cls.__name__}_"  
+                        f"mcts_{self.mcts_cls.__name__}_"  
+                        f"iter_{iteration + 1}.pt")
             print(f"Model and optimizer checkpoints saved for iteration {iteration + 1}.")
 
         print("\n============================================================")
