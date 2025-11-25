@@ -1,94 +1,162 @@
 import numpy as np
 import torch
 import torch.nn.functional as F
-import random, os, copy, time
+import random, os, time, copy
+import ray, tqdm
+
+class SPG:
+    def __init__(self, game):
+        self.state = game.get_initial_state()
+        self.memory = []
+        self.root = None
+        self.node = None
+
+@ray.remote(num_gpus=1/16)
+class SelfPlayWorker:
+    def __init__(self, game_cls, mcts_cls, model_cls, model_args):
+        self.game = game_cls()
+        
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        print(f"Worker initialized on {self.device}")        
+        
+        self.model = model_cls(**model_args).to("cuda")
+        self.model.eval()
+
+        self.mcts = mcts_cls(game=self.game, model=self.model)
+
+    def play_game(self, weights, temperature):
+        self.model.load_state_dict(weights)
+        
+        return_memory = []
+        player = self.game.get_current_player(self.game.get_initial_state())
+        spg = SPG(self.game)
+        
+        step = 0
+        while True:
+            self.mcts.search([spg.state], [spg]) 
+
+            action_probs = np.zeros(self.game.action_size)
+            for child in spg.root.children:
+                action_probs[child.action_taken] = child.visit_count
+            
+            action_probs /= np.sum(action_probs)
+            
+            spg.memory.append((copy.deepcopy(spg.root.state), action_probs, player))
+
+            temp_action_probs = action_probs ** (1 / temperature)
+            if np.sum(temp_action_probs) == 0: 
+                 temp_action_probs = np.ones_like(action_probs) / len(action_probs)
+            else:
+                temp_action_probs /= np.sum(temp_action_probs)
+
+            action = np.random.choice(self.game.action_size, p=temp_action_probs)
+            spg.state = self.game.get_next_state(spg.state, action)
+            
+            value, is_terminal = self.game.get_value_and_terminated(spg.state, player)
+            
+            if is_terminal:
+                for hist_state, hist_probs, hist_player in spg.memory:
+                    hist_outcome = value if hist_player == player else self.game.get_opponent_value(value)
+                    return_memory.append((hist_state, hist_probs, hist_outcome))
+                return return_memory
+            
+            player = self.game.get_opponent(player)
+            step += 1
 
 class AlphaZero:
-    def __init__(self, model, optimizer, game, mcts,
+    def __init__(self, model, optimizer, game_cls, mcts_cls, model_cls, model_args,
                  num_parallel_games, temperature, batch_size,
                  num_iterations, num_selfPlay_iterations, num_epochs):
         self.policy_name = "AlphaZero"
-        self.num_searches = mcts.num_searches
+        
+        self.game_cls = game_cls
+        self.mcts_cls = mcts_cls
+        self.model_cls = model_cls
+        self.model_args = model_args 
+
         self.model = model
         self.optimizer = optimizer
-        self.game = game
-        self.mcts = mcts
         
-        self.num_parallel_games = num_parallel_games
+        self.num_parallel_games = num_parallel_games 
         self.temperature = temperature
         self.batch_size = batch_size
         self.num_iterations = num_iterations
-        self.num_selfPlay_iterations = num_selfPlay_iterations
+        self.num_selfPlay_iterations = num_selfPlay_iterations 
         self.num_epochs = num_epochs
+
+        if not ray.is_initialized():
+            ray.init(ignore_reinit_error=True)
+        
+        print(f"Initializing {num_parallel_games} Ray workers...")
+        self.workers = [
+            SelfPlayWorker.remote(game_cls, mcts_cls, model_cls, model_args) 
+            for _ in range(num_parallel_games)
+        ]
+
     def selfPlay(self):
-            print("------------------------------------------------------------")
-            print("Starting self-play phase...")
-            return_memory = []
-            player = self.game.get_current_player(
-                self.game.get_initial_state()
-            )
+        print("------------------------------------------------------------")
+        print(f"Starting distributed self-play (Ray)... Target: {self.num_selfPlay_iterations} games")
+        
+
+        model_weights = self.model.state_dict()
+        cpu_weights = {k: v.cpu() for k, v in model_weights.items()}
+        weights_id = ray.put(cpu_weights)
+
+        memory = []
+        
+
+        games_launched = 0
+        futures = []
+
+        for i, worker in enumerate(self.workers):
+            if games_launched < self.num_selfPlay_iterations:
+                futures.append(worker.play_game.remote(weights_id, self.temperature))
+                games_launched += 1
+
+        with tqdm.tqdm(total=self.num_selfPlay_iterations, desc="Self-Play") as pbar:
+            while len(futures) > 0:
+                done_id, futures = ray.wait(futures, num_returns=1)
+                
+                result = ray.get(done_id[0])
+                memory.extend(result)
+                pbar.update(1)
+
+                if games_launched < self.num_selfPlay_iterations:
+                    pass 
+        
+        memory = []
+        games_launched = 0
+        worker_futures = {} 
+
+        for i, worker in enumerate(self.workers):
+            if games_launched < self.num_selfPlay_iterations:
+                fut = worker.play_game.remote(weights_id, self.temperature)
+                worker_futures[fut] = worker
+                games_launched += 1
+        
+        start_time = time.time()
+        completed = 0
+        
+        while len(worker_futures) > 0:
+            done_ids, _ = ray.wait(list(worker_futures.keys()), num_returns=1)
+            done_id = done_ids[0]
             
-            spGames = [SPG(self.game) for _ in range(self.num_parallel_games)]
-            total_moves = 0
-            completed_games = 0
+            game_memory = ray.get(done_id)
+            memory.extend(game_memory)
+            completed += 1
             
-            last_print_time = time.time() 
-            print_interval = 30 
+            worker = worker_futures.pop(done_id)
+            
+            if completed % 10 == 0:
+                print(f"[Ray] Completed {completed}/{self.num_selfPlay_iterations} games. Total samples: {len(memory)}")
 
-            while len(spGames) > 0:
-                states = [spg.state for spg in spGames]
-                self.mcts.search(states, spGames)
+            if games_launched < self.num_selfPlay_iterations:
+                fut = worker.play_game.remote(weights_id, self.temperature)
+                worker_futures[fut] = worker
+                games_launched += 1
 
-                for i in range(len(spGames))[::-1]:
-                    spg = spGames[i]
-                    action_probs = np.zeros(self.game.action_size)
-
-                    for child in spg.root.children:
-                        action_probs[child.action_taken] = child.visit_count
-
-                    action_probs /= np.sum(action_probs)
-                    spg.memory.append((copy.deepcopy(spg.root.state), action_probs, player))
-
-                    temperature_action_probs = action_probs ** (1 / self.temperature)
-                    if np.sum(temperature_action_probs) == 0:
-                        temperature_action_probs = np.ones_like(temperature_action_probs) / len(temperature_action_probs)
-                    else:
-                        temperature_action_probs /= np.sum(temperature_action_probs)
-                    
-                    action = np.random.choice(self.game.action_size, p=temperature_action_probs)
-                    spg.state = self.game.get_next_state(spg.state, action)
-
-                    value, is_terminal = self.game.get_value_and_terminated(
-                        state=spg.state, 
-                        player=player)
-                    
-                    if is_terminal:
-                        completed_games += 1
-                        for hist_neutral_state, hist_action_probs, hist_player in spg.memory:
-                            hist_outcome = value if hist_player == player else self.game.get_opponent_value(value)
-                            return_memory.append((
-                                hist_neutral_state,
-                                hist_action_probs,
-                                hist_outcome
-                            ))
-                        del spGames[i]
-
-                player = self.game.get_opponent(player)
-                total_moves += 1
-
-                current_time = time.time()
-                if current_time - last_print_time >= print_interval:
-                    print(f"[PROGRESS] Elapsed: {int(current_time - last_print_time)}s | "
-                        f"Total moves simulated: {total_moves} | "
-                        f"Completed games: {completed_games} | "
-                        f"Remaining active games: {len(spGames)}")
-                    last_print_time = current_time 
-
-            print(f"Self-play completed.")
-            print(f"Total simulated moves: {total_moves}")
-            print(f"Training samples generated: {len(return_memory)}")
-            print("------------------------------------------------------------")
-            return return_memory
+        print(f"Self-play completed in {time.time() - start_time:.1f}s.")
+        return memory
 
     def train(self, memory):
         print("------------------------------------------------------------")
@@ -162,10 +230,3 @@ class AlphaZero:
         print("\n============================================================")
         print("AlphaZero learning process finished successfully.")
         print("============================================================")
-
-class SPG:
-    def __init__(self, game):
-        self.state = game.get_initial_state()
-        self.memory = []
-        self.root = None
-        self.node = None
