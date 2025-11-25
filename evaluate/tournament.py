@@ -328,7 +328,11 @@ def run_tournament(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--game", default="ConnectFour", choices=["ConnectFour", "Breakthrough"])
+    parser.add_argument("--game", type=str, default="ConnectFour",
+                            choices=["ConnectFour", "Breakthrough", "TicTacToe", "Havannah", "Y",
+                                    "Stochastic_ConnectFour", "Stochastic_Breakthrough", 
+                                    "Stochastic_TicTacToe", "Stochastic_Havannah", "Stochastic_Y"],
+                            help="Game to play (default: ConnectFour).")  
     parser.add_argument("--checkpoint_paths", nargs='+', required=True)
     parser.add_argument("--num_runs", type=int, default=3)
     parser.add_argument("--num_searches", type=int, default=50)
