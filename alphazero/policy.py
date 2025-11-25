@@ -198,7 +198,7 @@ class AlphaZero:
             torch.save(self.model.state_dict(), 
                         f"checkpoint/policy_{self.policy_name}_"
                         f"game_{self.game_cls.__name__}_"  
-                        f"mcts_{self.mcts_cls.__name__}_"  
+                        f"mcts_{self.mcts_cls.func.__name__}_"  
                         f"iter_{iteration + 1}.pt")
             print(f"Model and optimizer checkpoints saved for iteration {iteration + 1}.")
 
