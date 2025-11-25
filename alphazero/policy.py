@@ -95,25 +95,23 @@ class AlphaZero:
 
     def selfPlay(self):
         print("------------------------------------------------------------")
-        print(f"Starting distributed self-play (Ray)... Target: {self.num_selfPlay_iterations} games")
+        print(f"Starting distributed self-play (Ray)... Target: {self.num_parallel_games} games")
         
-
         model_weights = self.model.state_dict()
         cpu_weights = {k: v.cpu() for k, v in model_weights.items()}
         weights_id = ray.put(cpu_weights)
 
         memory = []
         
-
         games_launched = 0
         futures = []
 
         for i, worker in enumerate(self.workers):
-            if games_launched < self.num_selfPlay_iterations:
+            if games_launched < self.num_parallel_games:
                 futures.append(worker.play_game.remote(weights_id, self.temperature))
                 games_launched += 1
 
-        with tqdm.tqdm(total=self.num_selfPlay_iterations, desc="Self-Play") as pbar:
+        with tqdm.tqdm(total=self.num_parallel_games, desc="Self-Play") as pbar:
             while len(futures) > 0:
                 done_id, futures = ray.wait(futures, num_returns=1)
                 
@@ -123,39 +121,7 @@ class AlphaZero:
 
                 if games_launched < self.num_selfPlay_iterations:
                     pass 
-        
-        memory = []
-        games_launched = 0
-        worker_futures = {} 
 
-        for i, worker in enumerate(self.workers):
-            if games_launched < self.num_selfPlay_iterations:
-                fut = worker.play_game.remote(weights_id, self.temperature)
-                worker_futures[fut] = worker
-                games_launched += 1
-        
-        start_time = time.time()
-        completed = 0
-        
-        while len(worker_futures) > 0:
-            done_ids, _ = ray.wait(list(worker_futures.keys()), num_returns=1)
-            done_id = done_ids[0]
-            
-            game_memory = ray.get(done_id)
-            memory.extend(game_memory)
-            completed += 1
-            
-            worker = worker_futures.pop(done_id)
-            
-            if completed % 10 == 0:
-                print(f"[Ray] Completed {completed}/{self.num_selfPlay_iterations} games. Total samples: {len(memory)}")
-
-            if games_launched < self.num_selfPlay_iterations:
-                fut = worker.play_game.remote(weights_id, self.temperature)
-                worker_futures[fut] = worker
-                games_launched += 1
-
-        print(f"Self-play completed in {time.time() - start_time:.1f}s.")
         return memory
 
     def train(self, memory):
@@ -217,6 +183,7 @@ class AlphaZero:
                 print(f"--- Running self-play batch {i + 1}/{self.num_selfPlay_iterations // self.num_parallel_games} ---")
                 memory += self.selfPlay()
             print("All self-play games completed. Starting model training.")
+            
             self.model.train()
             for epoch in range(self.num_epochs):
                 print(f"--- Training epoch {epoch + 1}/{self.num_epochs} ---")
