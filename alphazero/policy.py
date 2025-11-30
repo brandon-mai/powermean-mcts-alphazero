@@ -61,11 +61,11 @@ class SelfPlayWorker:
                 current_player_at_end = self.game.get_opponent(self.game.get_current_player(prev_state))
                 value, is_terminal = self.game.get_value_and_terminated(spg.state, current_player_at_end)
 
+                # Rescale value back to range [-1; 1]
+                value = 2 * value - 1
+
                 if is_terminal:
                     for hist_state, hist_probs, hist_player in spg.memory:
-                        # Rescale value back to range [-1; 1]
-                        value = 2 * value - 1
-
                         hist_outcome = value if hist_player == current_player_at_end else -value
                         return_memory.append((hist_state, hist_probs, hist_outcome))
                 else:
