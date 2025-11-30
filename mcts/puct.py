@@ -11,34 +11,44 @@ class Node:
         self.state = state
         self.player = player
         self.parent = parent
+        
         self.action_taken = action_taken
+        # the action is taken in reality (in case of stochasticity)
+        self.real_action = None        
+        
         self.prior = prior
         
-        self.children = []
+        self.children = [] # for compatibility purpose. Actually, this should be named opponent_nodes
+        self.opponent_q_values = {}        
+
         self.visit_count = visit_count
-        self.value_sum = 0
         self.q_node_values = 0  
 
     def is_fully_expanded(self):
         return len(self.children) > 0
     
     def select(self):
-        worst_child = None
+        worst_node = None
         worst_ucb = np.inf
-        
+
+        for node in self.children:
+            ucb = self.get_ucb(node)
+            if ucb < worst_ucb:
+                worst_node = node
+                worst_ucb = ucb 
+
         # handle stochasticity
         if self.game.is_stochastic and np.random.rand() < self.game.randomness:
-            return np.random.choice(self.children)
+            randome_child = np.random.choice(self.children)
+            # slip due to stochastic
+            randome_child.real_action = worst_node.action_taken     
+            return randome_child
 
-        for child in self.children:
-            ucb = self.get_ucb(child)
-            if ucb < worst_ucb:
-                worst_child = child
-                worst_ucb = ucb
-                
-        return worst_child
-    
+        worst_node.real_action = worst_node.action_taken
+        return worst_node
+
     def get_ucb(self, child):
+        q_value = child.parent.opponent_q_values[child.action_taken]["q_node_values"]
         # each node should be visit at least once!
         if child.visit_count == 0:
             return float('-inf')
@@ -68,14 +78,21 @@ class Node:
                 )
 
                 self.children.append(child)
+                self.opponent_q_values[action] = {
+                        "visit_count": 0,
+                        "q_node_values": 0,
+                }                
+
+                self.children.append(child)
                 
         return child
             
     def backpropagate(self, value):
-        self.q_node_values = (self.q_node_values * self.visit_count + value) / (self.visit_count + 1)
+        self.parent.opponent_q_values[self.real_action]["q_node_values"] = (
+            self.parent.opponent_q_values[self.real_action]["q_node_values"] * self.parent.opponent_q_values[self.real_action]["visit_count"] + value
+            ) / (self.parent.opponent_q_values[self.real_action]["visit_count"] + 1)
         
-        self.value_sum += value
-        self.visit_count += 1
+        self.parent.opponent_q_values[self.real_action]["visit_count"] += 1
         
         value = self.game.get_opponent_value(value)
         if self.parent is not None:

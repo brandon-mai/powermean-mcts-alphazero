@@ -10,7 +10,11 @@ class Node:
         self.state = state
         self.player = player
         self.parent = parent
+        
         self.action_taken = action_taken
+        # the action is taken in reality (in case of stochasticity)
+        self.real_action = None
+
         self.prior = prior
 
         self.C = C
@@ -18,31 +22,36 @@ class Node:
         self.gamma = gamma
         
         self.children = [] # for compatibility purpose. Actually, this should be named opponent_nodes
+        self.opponent_q_values = {}
+
         self.visit_count = visit_count
-        self.q_node_values = 0
         self.v_node_values = 0
 
     def is_fully_expanded(self):
         return len(self.children) > 0 
     
     def select_opponent(self):
-        wost_node = None
-        wost_ucb = np.inf
-
-        # handle stochasticity
-        if self.game.is_stochastic and np.random.rand() < self.game.randomness:
-            return np.random.choice(self.children)
+        worst_node = None
+        worst_ucb = np.inf
 
         for node in self.children:
             ucb = self.get_ucb(node)
-            if ucb < wost_ucb:
-                wost_node = node
-                wost_ucb = ucb
+            if ucb < worst_ucb:
+                worst_node = node
+                worst_ucb = ucb 
 
-        return wost_node
+        # handle stochasticity
+        if self.game.is_stochastic and np.random.rand() < self.game.randomness:
+            randome_child = np.random.choice(self.children)
+            # slip due to stochastic
+            randome_child.real_action = worst_node.action_taken     
+            return randome_child
+
+        worst_node.real_action = worst_node.action_taken
+        return worst_node
     
     def get_ucb(self, node):
-        q_value = node.q_node_values
+        q_value = node.parent.opponent_q_values[node.action_taken]["q_node_values"]
         # each node should be visit at least once!
         if (node.visit_count == 0):
             return float('-inf')
@@ -71,7 +80,13 @@ class Node:
                     action_taken=action,
                     prior=prob
                 )
+
                 self.children.append(node)
+                self.opponent_q_values[action] = {
+                        "visit_count": 0,
+                        "q_node_values": 0,
+                }
+                
         return node
     
     def backpropagate(self, update_player, final_reward=None):
@@ -95,29 +110,29 @@ class Node:
                     contribution = weight * powered
                     power_sum += contribution
                 elif node.children:
-                    for child in node.children:
-                        weight = child.visit_count / total_q_visit
-                        powered = child.q_node_values ** self.p
+                    for key in node.opponent_q_values:
+                        weight = node.opponent_q_values[key]["visit_count"] / total_q_visit
+                        powered = node.opponent_q_values[key]["q_node_values"] ** self.p
                         contribution = weight * powered
                         power_sum += contribution
             self.v_node_values = power_sum ** (1.0 / self.p)
 
         if self.parent:
             if final_reward is not None:
-                self.q_node_values = (
-                    self.q_node_values * self.visit_count 
+                self.parent.opponent_q_values[self.real_action]["q_node_values"] = (
+                    self.parent.opponent_q_values[self.real_action]["q_node_values"] * self.parent.opponent_q_values[self.real_action]["visit_count"] 
                     + final_reward
                     + self.gamma * self.v_node_values
-                ) / (self.visit_count + 1) 
+                ) / (self.parent.opponent_q_values[self.real_action]["visit_count"] + 1) 
             else:
                 immediate_reward, _ = self.game.get_value_and_terminated(self.state, self.player) 
                 
-                self.q_node_values = (
-                    self.q_node_values * self.visit_count
+                self.parent.opponent_q_values[self.real_action]["q_node_values"] = (
+                    self.parent.opponent_q_values[self.real_action]["q_node_values"] * self.parent.opponent_q_values[self.real_action]["visit_count"] 
                     + immediate_reward
                     + self.gamma * self.v_node_values
-                ) / (self.visit_count + 1)
-        self.visit_count += 1
+                ) / (self.parent.opponent_q_values[self.real_action]["visit_count"] + 1) 
+        self.parent.opponent_q_values[self.real_action]["visit_count"] += 1
         
         if self.parent:
             self.parent.backpropagate(update_player)

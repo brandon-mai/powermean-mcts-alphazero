@@ -11,15 +11,12 @@ class SPG:
         self.root = None
         self.node = None
 
-@ray.remote(num_gpus=0.1, num_cpus=1) 
+@ray.remote
 class SelfPlayWorker:
     def __init__(self, game_cls, mcts_cls, model_cls, model_args, games_per_worker):
         self.game = game_cls()
         
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        print(f"Worker initialized on {self.device}")        
-        
-        self.model = model_cls(**model_args).to("cuda")
+        self.model = model_cls(**model_args)
         self.model.eval()
         
         self.games_per_worker = games_per_worker 
@@ -66,7 +63,10 @@ class SelfPlayWorker:
 
                 if is_terminal:
                     for hist_state, hist_probs, hist_player in spg.memory:
-                        hist_outcome = value if hist_player == current_player_at_end else self.game.get_opponent_value(value)
+                        # Rescale value back to range [-1; 1]
+                        value = 2 * value - 1
+
+                        hist_outcome = value if hist_player == current_player_at_end else -value
                         return_memory.append((hist_state, hist_probs, hist_outcome))
                 else:
                     next_spgs.append(spg)
