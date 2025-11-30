@@ -104,8 +104,15 @@ class AlphaZero:
             ray.init(ignore_reinit_error=True)
         
         print(f"Initializing {num_parallel_games} Ray workers...")
+        
+
+        num_gpus_available = torch.cuda.device_count()
+        gpu_per_worker = num_gpus_available / num_parallel_games
+            
         self.workers = [
-            SelfPlayWorker.remote(game_cls, mcts_cls, model_cls, model_args, games_per_worker) 
+            SelfPlayWorker.options(num_gpus=gpu_per_worker).remote(
+                game_cls, mcts_cls, model_cls, model_args, games_per_worker
+            ) 
             for _ in range(num_parallel_games)
         ]
 

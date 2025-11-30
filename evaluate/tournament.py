@@ -293,7 +293,7 @@ def run_tournament(args):
     model_cls, model_config = get_model_config_and_class(args.game)
     
     num_gpus = torch.cuda.device_count()
-    # Tính toán GPU: Mỗi worker chiếm bao nhiêu GPU
+
     gpu_per_worker = (num_gpus / args.num_games_parallel) if num_gpus > 0 else 0
     WorkerRemote = TournamentWorker.options(num_gpus=gpu_per_worker)
 
