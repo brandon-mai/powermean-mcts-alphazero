@@ -94,11 +94,13 @@ class Node:
             self.parent.backpropagate(update_player)
             return
 
+        self.visit_count = self.visit_count + 1
+
         if final_reward is not None:
             self.v_node_values = final_reward
         else:
             power_sum = 0
-            total_q_visit = self.visit_count + 1
+            total_q_visit = self.visit_count
             for node in self.children:
                 if node.children:
                     total_q_visit -= 1
@@ -132,7 +134,7 @@ class Node:
                     + immediate_reward
                     + self.gamma * self.v_node_values
                 ) / (self.parent.opponent_q_values[self.real_action]["visit_count"] + 1) 
-        self.parent.opponent_q_values[self.real_action]["visit_count"] += 1
+            self.parent.opponent_q_values[self.real_action]["visit_count"] += 1
         
         if self.parent:
             self.parent.backpropagate(update_player)

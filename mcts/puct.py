@@ -53,7 +53,6 @@ class Node:
         if child.visit_count == 0:
             return float('-inf')
         
-        q_value = child.q_node_values
         return q_value - self.C * (math.sqrt(self.visit_count) / (child.visit_count + 1)) * child.prior
     
     def expand(self, policy):
@@ -82,20 +81,20 @@ class Node:
                         "visit_count": 0,
                         "q_node_values": 0,
                 }                
-
-                self.children.append(child)
                 
         return child
             
     def backpropagate(self, value):
-        self.parent.opponent_q_values[self.real_action]["q_node_values"] = (
-            self.parent.opponent_q_values[self.real_action]["q_node_values"] * self.parent.opponent_q_values[self.real_action]["visit_count"] + value
-            ) / (self.parent.opponent_q_values[self.real_action]["visit_count"] + 1)
-        
-        self.parent.opponent_q_values[self.real_action]["visit_count"] += 1
-        
-        value = self.game.get_opponent_value(value)
         if self.parent is not None:
+            self.parent.opponent_q_values[self.real_action]["q_node_values"] = (
+                self.parent.opponent_q_values[self.real_action]["q_node_values"] * self.parent.opponent_q_values[self.real_action]["visit_count"] + value
+                ) / (self.parent.opponent_q_values[self.real_action]["visit_count"] + 1)
+            
+            self.parent.opponent_q_values[self.real_action]["visit_count"] += 1
+            
+            self.visit_count += 1
+            
+            value = self.game.get_opponent_value(value)
             self.parent.backpropagate(value)
 
 class PUCT:
