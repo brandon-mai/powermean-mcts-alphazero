@@ -1,29 +1,29 @@
 import numpy as np
 import pyspiel
 
-import copy
-
 class Y():
     def __init__(self):
         self.name = "Y"
         self.num_player = 2
-
         self.game = pyspiel.load_game("y")
         self.action_size = self.game.num_distinct_actions()
-        self.num_planes, self.row_count, self.column_count = self.game.observation_tensor_shape()
+
+        self.tensor_shape = tuple(self.game.observation_tensor_shape())
+        
+        self.num_planes = self.tensor_shape[0]
+        self.row_count = self.tensor_shape[1]
+        self.column_count = self.tensor_shape[2]        
         
         self.is_stochastic = False
 
     def get_initial_state(self):
-        state = self.game.new_initial_state()
-        return copy.deepcopy(state)
+        return self.game.new_initial_state()
 
     def get_current_player(self, state):
-        player = state.current_player()
-        return player
+        return state.current_player()
 
     def get_next_state(self, state, action):
-        next_state = copy.deepcopy(state)
+        next_state = state.clone()
         next_state.apply_action(action)  
         return next_state
 
@@ -31,38 +31,22 @@ class Y():
         return state.legal_actions()
 
     def get_value_and_terminated(self, state, player):
-        is_terminal = state.is_terminal()  
-        if is_terminal:
-            reward = state.returns()[player]
-            reward = (reward + 1) / 2
-        else:
-            # get intermediate reward
-            # because there is no intermedate reward, so by default intermedate reward is 0
-            reward =  0
-        return reward, is_terminal 
+        if state.is_terminal():
+            return (state.returns()[player] + 1) / 2, True
+        return 0, False
 
     def get_opponent(self, player):
-        if player == 0:
-            opponent_player = 1
-        elif player == 1:
-            opponent_player = 0
-        else:
-            raise ValueError(f"Invalid player value: {player}. Shoule be  0 or 1.")
-        return opponent_player
-    def get_opponent_value(self, value):
-        return 1.0 - value
+        return 1 - player 
 
     def get_encoded_state(self, state):
-        shape = self.game.observation_tensor_shape()
-
-        if isinstance(state, list) or isinstance(state, tuple):  
-            encoded_state = []
-            for s in state:
-                encoded_state.append(np.reshape(np.asarray(s.observation_tensor()), shape))
-            encoded_state = np.stack(encoded_state).astype(np.float32)    
+        if isinstance(state, (list, tuple)):
+            batch_size = len(state)
+            encoded = np.zeros((batch_size,) + self.tensor_shape, dtype=np.float32)
+            for i, s in enumerate(state):
+                encoded[i] = np.reshape(s.observation_tensor(), self.tensor_shape)
+            return encoded
         else:
-            encoded_state = np.reshape(np.asarray(state.observation_tensor()), shape) 
-        return encoded_state
+            return np.reshape(state.observation_tensor(), self.tensor_shape).astype(np.float32)
 
     def render(self, state):
         print(f"state:\n{state}")

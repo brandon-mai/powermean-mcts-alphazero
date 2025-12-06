@@ -7,27 +7,43 @@ import argparse, sys, itertools, time, json, os, random, string
 from collections import defaultdict
 from functools import partial
 
+# Add project subdirectories to path for module resolution
 sys.path.append('powermean-mcts-alphazero/')
 sys.path.append('powermean-mcts-alphazero/games')
 sys.path.append('powermean-mcts-alphazero/alphazero')
 sys.path.append('powermean-mcts-alphazero/mcts')
 
-from games import ConnectFour, Breakthrough, TicTacToe, Havannah, Y, Stochastic_ConnectFour, Stochastic_Breakthrough, Stochastic_TicTacToe, Stochastic_Havannah, Stochastic_Y
+from games import (
+    ConnectFour, Breakthrough, TicTacToe, Havannah, Y, 
+    Stochastic_ConnectFour, Stochastic_Breakthrough, 
+    Stochastic_TicTacToe, Stochastic_Havannah, Stochastic_Y
+)
 from alphazero import ResNet
 from mcts import Stochastic_Powermean_UCT, PUCT
 
 
 class SPG:
+    """
+    Lightweight container for a single game instance during the tournament.
+    
+    Optimizations:
+    - Uses `__slots__` to restrict attribute creation, significantly reducing 
+      memory footprint when instantiating thousands of objects.
+    - Speeds up attribute access compared to standard __dict__.
+    """
+    __slots__ = ['game', 'state', 'memory', 'root'] 
     def __init__(self, game):
         self.game = game
         self.state = game.get_initial_state()
         self.memory = []
-        self.root = None 
+        self.root = None
 
 def random_suffix(k=6):
+    """Generates a random suffix for unique filename creation."""
     return ''.join(random.choices(string.ascii_lowercase + string.digits, k=k))
 
 def get_game_class(game_name):
+    """Maps game name strings to their corresponding class definitions."""
     mapping = {
         "ConnectFour": ConnectFour, "Breakthrough": Breakthrough, "TicTacToe": TicTacToe,
         "Havannah": Havannah, "Y": Y, "Stochastic_ConnectFour": Stochastic_ConnectFour, 
@@ -37,6 +53,7 @@ def get_game_class(game_name):
     return mapping[game_name]
 
 def get_model_config_and_class(game_name):
+    """Returns the Model Class and specific architecture config based on the game."""
     if "ConnectFour" in game_name:
         config = {"num_resBlocks": 9, "num_hidden": 128}
     elif "Breakthrough" in game_name:
@@ -48,92 +65,120 @@ def get_model_config_and_class(game_name):
 
 @ray.remote
 class TournamentWorker:
+    """
+    Ray Actor responsible for running matches between two agents.
+    Designed to persist in GPU memory to avoid reloading models repeatedly.
+    """
     def __init__(self, game_cls, model_cls, model_args):
         self.game = game_cls()
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+        # Initialize the model once per worker
         self.model = model_cls(game=self.game, device=self.device, **model_args)
         self.model.eval()
         
         print(f"Tournament Worker initialized on {self.device}")
 
     def update_weights(self, weights):
+        """Updates the worker's model with new weights broadcasted from the driver."""
         self.model.load_state_dict(weights)
 
+    @torch.inference_mode() 
     def run_match(self, num_games, temperature, starting_player, 
                   mcts_cls_A, mcts_args_A, mcts_cls_B, mcts_args_B):
+        """
+        Executes a batch of games between Agent A and Agent B.
+        
+        Optimizations:
+        - @torch.inference_mode(): Disables gradient tracking for max speed.
+        - Vectorized MCTS: Runs searches for all games in the batch simultaneously.
+        """
 
+        # Initialize MCTS instances for both agents
         mcts_A = mcts_cls_A(game=self.game, model=self.model, **mcts_args_A)
         mcts_B = mcts_cls_B(game=self.game, model=self.model, **mcts_args_B)
         
+        # Map bots to player indices based on starting configuration
         bots = {}
         if starting_player == 0:
-            bots[0] = mcts_A 
-            bots[1] = mcts_B 
+            bots[0], bots[1] = mcts_A, mcts_B
         else:
-            bots[0] = mcts_B 
-            bots[1] = mcts_A 
+            bots[0], bots[1] = mcts_B, mcts_A
 
         spgs = [SPG(self.game) for _ in range(num_games)]
         results = []
+        
+        # Pre-allocate probability vector to avoid re-creation in loop
+        action_size = self.game.action_size
+        ones_prob = np.ones(action_size) / action_size
 
         while spgs:
-            player_0_spgs = []
-            player_1_spgs = []
-            
+            # Group games by current player to batch MCTS requests
+            player_spgs = {0: [], 1: []}
             for spg in spgs:
-                current_p = self.game.get_current_player(spg.state)
-                if current_p == 0:
-                    player_0_spgs.append(spg)
-                else:
-                    player_1_spgs.append(spg)
+                player_spgs[self.game.get_current_player(spg.state)].append(spg)
             
-            if player_0_spgs:
-                states_0 = [s.state for s in player_0_spgs]
-                bots[0].search(states_0, player_0_spgs)
-                
-            if player_1_spgs:
-                states_1 = [s.state for s in player_1_spgs]
-                bots[1].search(states_1, player_1_spgs)
+            # Execute Batch MCTS Search
+            if player_spgs[0]:
+                bots[0].search([s.state for s in player_spgs[0]], player_spgs[0])
+            if player_spgs[1]:
+                bots[1].search([s.state for s in player_spgs[1]], player_spgs[1])
 
             next_spgs = []
             
+            # Process results and step the environment
             for spg in spgs:
-                action_probs = np.zeros(self.game.action_size)
+                # 1. Extract Action Probabilities from MCTS Root
                 if spg.root is not None:
+                    # Note: Assumes root.children is populated. 
+                    # For optimization, checking child.visit_count is sufficient.
+                    counts = np.zeros(action_size)
                     for child in spg.root.children:
-                        action_probs[child.action_taken] = child.visit_count
-                
-                if np.sum(action_probs) == 0:
-                     action_probs = np.ones_like(action_probs) / len(action_probs)
+                        counts[child.action_taken] = child.visit_count
+                    
+                    sum_counts = np.sum(counts)
+                    if sum_counts > 0:
+                        action_probs = counts / sum_counts
+                    else:
+                        action_probs = ones_prob
                 else:
-                    action_probs /= np.sum(action_probs)
+                    action_probs = ones_prob
 
-                temp_action_probs = action_probs ** (1 / temperature)
-                if np.sum(temp_action_probs) == 0:
-                     temp_action_probs = np.ones_like(action_probs) / len(action_probs)
+                # 2. Apply Temperature for action selection
+                # Optimization: Use argmax for low temp to avoid expensive power ops
+                if temperature < 1e-3:
+                    action = np.argmax(action_probs)
                 else:
-                    temp_action_probs /= np.sum(temp_action_probs)
+                    # Safe power operation with normalization
+                    action_probs = action_probs ** (1 / temperature)
+                    sum_prob = np.sum(action_probs)
+                    if sum_prob > 0:
+                        action_probs /= sum_prob
+                    else:
+                        action_probs = ones_prob
+                    action = np.random.choice(action_size, p=action_probs)
                 
-                action = np.random.choice(self.game.action_size, p=temp_action_probs)
-                
+                # 3. Game Step & Terminal Check
                 current_player_idx = self.game.get_current_player(spg.state)
-                
                 spg.state = self.game.get_next_state(spg.state, action)
+                
+                # Memory Optimization:
+                # Set root to None to allow GC to collect the old tree immediately.
+                # Prioritizes memory safety over Tree Reuse for this implementation.
                 spg.root = None 
                 
                 value, is_terminal = self.game.get_value_and_terminated(spg.state, current_player_idx)
                 
                 if is_terminal:
-                    outcome_dict = {}
+                    # Determine Winner
                     if value == 1.0:
-                        outcome_dict = {'winner': current_player_idx, 'outcome': 1.0}
+                        winner = current_player_idx
                     elif value == 0.0:
-                        outcome_dict = {'winner': self.game.get_opponent(current_player_idx), 'outcome': 1.0} # Opponent thắng
-                    else: 
-                        outcome_dict = {'winner': None, 'outcome': 0.5}
+                        winner = self.game.get_opponent(current_player_idx)
+                    else:
+                        winner = None # Draw
                     
-                    results.append(outcome_dict)
+                    results.append({'winner': winner, 'outcome': 1.0 if winner is not None else 0.5})
                 else:
                     next_spgs.append(spg)
             
@@ -142,10 +187,15 @@ class TournamentWorker:
         return results
     
 def run_single_tournament_distributed(game_cls, mcts_list, args, run_id, workers, device):
+    """
+    Orchestrates a single tournament run (round-robin or specific matchups) across distributed workers.
+    """
     checkpoint_path = mcts_list[0]["checkpoint_path"]
     
     print(f"  Loading weights from: {checkpoint_path}")
     weights = torch.load(checkpoint_path, map_location='cpu')
+    
+    # Put weights into Ray's Object Store for efficient broadcasting to workers
     weights_ref = ray.put(weights) 
     
     print(f"  Broadcasting weights to {len(workers)} workers...")
@@ -159,10 +209,12 @@ def run_single_tournament_distributed(game_cls, mcts_list, args, run_id, workers
     
     print(f"  Generating tasks for {len(matchups)} matchups...")
     
+    # Prepare task definitions
     for m1, m2 in matchups:
         cls_A, args_A = m1["mcts_cls"], m1["mcts_args"]
         cls_B, args_B = m2["mcts_cls"], m2["mcts_args"]
         
+        # Play both as Player 1 and Player 2 for fairness
         for start_p in [0, 1]: 
             games_remaining = args.num_games_per_pair
             
@@ -188,46 +240,49 @@ def run_single_tournament_distributed(game_cls, mcts_list, args, run_id, workers
 
     total_games_scheduled = sum(t["batch_size"] for t in all_tasks_metadata)
     print(f"  Total tasks created: {len(all_tasks_metadata)} | Total games: {total_games_scheduled}")
-
-    futures = []
+    
+    # Scheduler Optimization: Use Dictionary for O(1) task lookup
+    future_to_task = {} 
+    
     worker_index = 0
     num_workers = len(workers)
     
-    random.shuffle(all_tasks_metadata) 
-
-    for task in all_tasks_metadata:
+    # Initial Dispatch: Fill workers with tasks
+    # Limit initial dispatch to avoid overloading Ray's scheduler if tasks > workers
+    initial_batch_size = min(len(all_tasks_metadata), len(workers) * 2) 
+    
+    for i in range(initial_batch_size):
+        task = all_tasks_metadata[i]
         worker = workers[worker_index % num_workers]
         worker_index += 1
         
         fut = worker.run_match.remote(
-            task["batch_size"],
-            task["temperature"],
-            task["starting_player"],
-            task["cls_A"], task["args_A"],
-            task["cls_B"], task["args_B"]
+            task["batch_size"], task["temperature"], task["starting_player"],
+            task["cls_A"], task["args_A"], task["cls_B"], task["args_B"]
         )
-        
-        futures.append((fut, task["p1_name"], task["p2_name"]))
+        # Store task metadata mapped by the future object
+        future_to_task[fut] = {"p1": task["p1_name"], "p2": task["p2_name"]}
 
+    next_task_idx = initial_batch_size
+
+    # Event Loop: Process results as they arrive
     with tqdm.tqdm(total=total_games_scheduled, desc=f"Tournament Run #{run_id + 1}") as pbar:
-        while futures:
-            done_ids, _ = ray.wait([f[0] for f in futures], num_returns=1)
+        while future_to_task:
+            # 1. Efficiently wait for the first available completion (O(N) -> O(1) with list(keys))
+            done_ids, _ = ray.wait(list(future_to_task.keys()), num_returns=1)
             done_id = done_ids[0]
             
-            idx = -1
-            for i, f in enumerate(futures):
-                if f[0] == done_id:
-                    idx = i
-                    break
+            # 2. Retrieve Metadata (O(1) operation)
+            task_info = future_to_task.pop(done_id)
+            p1_name = task_info["p1"]
+            p2_name = task_info["p2"]
             
-            fut, p1_name, p2_name = futures.pop(idx)
-            
+            # 3. Process Results
             try:
                 batch_results = ray.get(done_id)
-                
                 for result in batch_results:
                     pbar.update(1) 
-
+                    
                     if result['outcome'] == 1.0:
                         if result['winner'] == 0: 
                             run_results[p1_name]["win"] += 1
@@ -241,10 +296,25 @@ def run_single_tournament_distributed(game_cls, mcts_list, args, run_id, workers
             except Exception as e:
                 print(f"Error in batch task: {e}")
 
+            # 4. Schedule Next Task (Pipeline approach)
+            if next_task_idx < len(all_tasks_metadata):
+                task = all_tasks_metadata[next_task_idx]
+                next_task_idx += 1
+                
+                # Round-robin worker assignment
+                worker = workers[worker_index % num_workers]
+                worker_index += 1
+                
+                new_fut = worker.run_match.remote(
+                    task["batch_size"], task["temperature"], task["starting_player"],
+                    task["cls_A"], task["args_A"], task["cls_B"], task["args_B"]
+                )
+                future_to_task[new_fut] = {"p1": task["p1_name"], "p2": task["p2_name"]}
+
     return run_results
 
 def aggregate_results(all_runs_results):
-    """Aggregate results from multiple runs"""
+    """Aggregates and calculates statistics (Mean/Std) from multiple tournament runs."""
     aggregated = defaultdict(lambda: {"win": [], "loss": [], "draw": []})
     
     for run_results in all_runs_results:
@@ -260,6 +330,7 @@ def aggregate_results(all_runs_results):
         draws = np.array(records["draw"])
         total_games = wins + losses + draws
         
+        # Calculate win rate safely
         with np.errstate(divide='ignore', invalid='ignore'):
             win_rates = np.where(total_games > 0, (wins / total_games * 100), 0)
         
@@ -277,9 +348,13 @@ def aggregate_results(all_runs_results):
 
 
 def run_tournament(args):
+    """Main entry point for running the tournament pipeline."""
+    
+    # Initialize Ray if not already running
     if not ray.is_initialized():
         project_root = os.path.abspath('powermean-mcts-alphazero') 
         
+        # Ensure workers can import local modules
         module_paths = [
             project_root,
             os.path.join(project_root, 'games'),
@@ -294,6 +369,7 @@ def run_tournament(args):
     
     num_gpus = torch.cuda.device_count()
 
+    # Allocate GPU resources per worker
     gpu_per_worker = (num_gpus / args.num_games_parallel) if num_gpus > 0 else 0
     WorkerRemote = TournamentWorker.options(num_gpus=gpu_per_worker)
 
@@ -315,6 +391,7 @@ def run_tournament(args):
 
     all_checkpoint_results = {}
     
+    # Iterate over checkpoints to evaluate
     for checkpoint_idx, checkpoint_path in enumerate(args.checkpoint_paths):
         print(f"\n{'='*60}")
         print(f"PROCESSING CHECKPOINT: {checkpoint_path}")
@@ -322,6 +399,7 @@ def run_tournament(args):
         
         mcts_list = []
         
+        # Create configurations for Stochastic PowerMean MCTS (with varied 'p')
         for p in args.p:
             args_stoch = mcts_args_base.copy()
             args_stoch["p"] = p
@@ -334,6 +412,7 @@ def run_tournament(args):
                 "mcts_args": args_stoch 
             })
 
+        # Add Baseline PUCT
         mcts_list.append({
             "name": "PUCT",
             "checkpoint_path": checkpoint_path,
@@ -352,6 +431,7 @@ def run_tournament(args):
             for k, v in results.items():
                 print(f"    {k}: {v}")
 
+        # Save results
         checkpoint_results = aggregate_results(all_runs_results)
         checkpoint_basename = os.path.basename(checkpoint_path)
         all_checkpoint_results[checkpoint_basename] = checkpoint_results
@@ -364,6 +444,8 @@ def run_tournament(args):
             "config": vars(args),
             "results": checkpoint_results
         }
+        
+        # Helper for JSON serialization of Numpy types
         def convert(o):
             if isinstance(o, np.integer): return int(o)
             if isinstance(o, np.floating): return float(o)
@@ -374,6 +456,7 @@ def run_tournament(args):
             json.dump(save_data, f, indent=4, default=convert)
         print(f"  Saved: {fn}")
 
+    # Final Summary Save
     os.makedirs("evaluate_result", exist_ok=True)
     suffix = random_suffix()
     final_fn = f"evaluate_result/summary_{suffix}.json"
@@ -387,27 +470,27 @@ def run_tournament(args):
     print(f"\nDone. Final results saved to {final_fn}")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description="Distributed Tournament for AlphaZero models.")
     parser.add_argument("--game", type=str, default="ConnectFour",
                             choices=["ConnectFour", "Breakthrough", "TicTacToe", "Havannah", "Y",
                                     "Stochastic_ConnectFour", "Stochastic_Breakthrough", 
                                     "Stochastic_TicTacToe", "Stochastic_Havannah", "Stochastic_Y"],
-                            help="Game to play (default: ConnectFour).")  
-    parser.add_argument("--checkpoint_paths", nargs='+', required=True)
-    parser.add_argument("--num_runs", type=int, default=3)
-    parser.add_argument("--num_searches", type=int, default=50)
-    parser.add_argument("--C", type=float, default=1.41)
-    parser.add_argument("--p", type=float, nargs='+', default=[1.5])
-    parser.add_argument("--gamma", type=float, default=0.95)
-    parser.add_argument("--dirichlet_epsilon", type=float, default=0.0) 
+                            help="Game to play.")  
+    parser.add_argument("--checkpoint_paths", nargs='+', required=True, help="List of model checkpoints to evaluate.")
+    parser.add_argument("--num_runs", type=int, default=3, help="Number of repeated runs for statistical significance.")
+    parser.add_argument("--num_searches", type=int, default=50, help="Number of MCTS simulations per move.")
+    parser.add_argument("--C", type=float, default=1.41, help="Exploration constant.")
+    parser.add_argument("--p", type=float, nargs='+', default=[1.5], help="List of 'p' values for PowerMean UCT.")
+    parser.add_argument("--gamma", type=float, default=0.95, help="Gamma factor for PowerMean.")
+    parser.add_argument("--dirichlet_epsilon", type=float, default=0.0, help="Noise for tournament (usually 0).") 
     parser.add_argument("--dirichlet_alpha", type=float, default=0.3)
-    parser.add_argument("--num_games_per_pair", type=int, default=10)
+    parser.add_argument("--num_games_per_pair", type=int, default=10, help="Total games per matchup per run.")
     
     parser.add_argument("--games_per_worker", type=int, default=10, 
-                        help="Number of games to run in parallel inside one worker task.")
+                        help="Batch size: Number of games running in parallel on a single worker.")
     
-    parser.add_argument("--num_games_parallel", type=int, default=4)
-    parser.add_argument("--temperature", type=float, default=0.01) 
+    parser.add_argument("--num_games_parallel", type=int, default=4, help="Number of Ray workers.")
+    parser.add_argument("--temperature", type=float, default=0.01, help="Temperature for move selection.") 
     
     args = parser.parse_args()
     

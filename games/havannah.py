@@ -1,8 +1,6 @@
 import numpy as np
 import pyspiel
 
-import copy
-
 class Havannah():
     def __init__(self):
         self.name = "Havannah"
