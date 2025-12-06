@@ -1,143 +1,170 @@
 import numpy as np
 import math
 import torch
-
 import copy
 
 class Node:
-    def __init__(self, game, state, player, C, p, gamma, parent=None, action_taken=None, prior=0, visit_count=0):
+    """
+    Represents a node in the Monte Carlo Tree Search.
+    optimized with __slots__ and Numpy for memory and speed efficiency.
+    """
+    __slots__ = ['game', 'state', 'player', 'C', 'p', 'gamma', 
+                 'parent', 'action_taken', 'children', 
+                 'visit_count', 'v_value', 
+                 'valid_actions', 'child_probs', 
+                 'child_visits', 'child_q_values']
+
+    def __init__(self, game, state, player, C, p, gamma, parent=None, action_taken=None):
         self.game = game
         self.state = state
         self.player = player
-        self.parent = parent
-        
-        self.action_taken = action_taken
-        # the action is taken in reality (in case of stochasticity)
-        self.real_action = None
-
-        self.prior = prior
-
         self.C = C
         self.p = p
         self.gamma = gamma
+        self.parent = parent
+        self.action_taken = action_taken
         
-        self.children = [] # for compatibility purpose. Actually, this should be named opponent_nodes
-        self.opponent_q_values = {}
-
-        self.visit_count = visit_count
-        self.v_node_values = 0
+        # Map: actual_action -> Node object
+        self.children = {} 
+        
+        self.visit_count = 0
+        self.v_value = 0.0  # Stores the PowerMean aggregated value
+        
+        # Numpy arrays for vectorized child statistics
+        self.valid_actions = None
+        self.child_probs = None    # Prior probabilities from Policy Network
+        self.child_visits = None   # Visit counts (N) for each action
+        self.child_q_values = None # Q-values for each action
 
     def is_fully_expanded(self):
-        return len(self.children) > 0 
-    
+        return self.child_probs is not None
+
     def select_opponent(self):
-        worst_node = None
-        worst_ucb = np.inf
-
-        for node in self.children:
-            ucb = self.get_ucb(node)
-            if ucb < worst_ucb:
-                worst_node = node
-                worst_ucb = ucb 
-
-        # handle stochasticity
-        if self.game.is_stochastic and np.random.rand() < self.game.randomness:
-            randome_child = np.random.choice(self.children)
-            # slip due to stochastic
-            randome_child.real_action = worst_node.action_taken     
-            return randome_child
-
-        worst_node.real_action = worst_node.action_taken
-        return worst_node
-    
-    def get_ucb(self, node):
-        q_value = node.parent.opponent_q_values[node.action_taken]["q_node_values"]
-        # each node should be visit at least once!
-        if (node.visit_count == 0):
-            return float('-inf')
-        else:
-            return q_value - self.C * (math.pow(self.visit_count, 0.25) / math.sqrt(node.visit_count)) * node.prior
-    
-    def expand(self, policy):
-        for action, prob in enumerate(policy):
-            if prob > 0:
-                node_state = copy.deepcopy(self.state)
-                
-                if self.game.is_stochastic:
-                    # get next state without consider randomness
-                    node_state = self.game.get_next_absolute_state(node_state, action)
-                else:
-                    node_state = self.game.get_next_state(node_state, action)
-
-                node = Node(
-                    game=self.game,
-                    state=node_state,
-                    player=self.game.get_opponent(self.player),
-                    C=self.C,
-                    p=self.p,
-                    gamma=self.gamma,
-                    parent=self,
-                    action_taken=action,
-                    prior=prob
-                )
-
-                self.children.append(node)
-                self.opponent_q_values[action] = {
-                        "visit_count": 0,
-                        "q_node_values": 0,
-                }
-                
-        return node
-    
-    def backpropagate(self, update_player, final_reward=None):
-        if update_player != self.player and self.parent:
-            self.parent.backpropagate(update_player)
-            return
-
-        self.visit_count = self.visit_count + 1
-
-        if final_reward is not None:
-            self.v_node_values = final_reward
-        else:
-            power_sum = 0
-            total_q_visit = self.visit_count
-            for node in self.children:
-                if node.children:
-                    total_q_visit -= 1
-
-            for node in self.children:
-                if not node.children:
-                    weight = node.visit_count / total_q_visit
-                    powered = ((1 + self.gamma) * node.v_node_values) ** self.p
-                    contribution = weight * powered
-                    power_sum += contribution
-                elif node.children:
-                    for key in node.opponent_q_values:
-                        weight = node.opponent_q_values[key]["visit_count"] / total_q_visit
-                        powered = node.opponent_q_values[key]["q_node_values"] ** self.p
-                        contribution = weight * powered
-                        power_sum += contribution
-            self.v_node_values = power_sum ** (1.0 / self.p)
-
-        if self.parent:
-            if final_reward is not None:
-                self.parent.opponent_q_values[self.real_action]["q_node_values"] = (
-                    self.parent.opponent_q_values[self.real_action]["q_node_values"] * self.parent.opponent_q_values[self.real_action]["visit_count"] 
-                    + final_reward
-                    + self.gamma * self.v_node_values
-                ) / (self.parent.opponent_q_values[self.real_action]["visit_count"] + 1) 
-            else:
-                immediate_reward, _ = self.game.get_value_and_terminated(self.state, self.player) 
-                
-                self.parent.opponent_q_values[self.real_action]["q_node_values"] = (
-                    self.parent.opponent_q_values[self.real_action]["q_node_values"] * self.parent.opponent_q_values[self.real_action]["visit_count"] 
-                    + immediate_reward
-                    + self.gamma * self.v_node_values
-                ) / (self.parent.opponent_q_values[self.real_action]["visit_count"] + 1) 
-            self.parent.opponent_q_values[self.real_action]["visit_count"] += 1
+        """
+        Selects the next node using the 'Worst Action' logic (Min-UCB).
+        Formula: Score = Q - U
+        Target: Argmin(Score)
+        """
+        # 1. Vectorized UCB Calculation
+        epsilon = 1e-8
+        n_pow = math.pow(self.visit_count, 0.25) if self.visit_count > 0 else 0
         
-        if self.parent:
-            self.parent.backpropagate(update_player)
+        # UCB Exploration term
+        u_term = self.C * (n_pow / (np.sqrt(self.child_visits) + epsilon)) * self.child_probs
+        
+        # Logic: Select Minimum (Q - U)
+        ucb_scores = self.child_q_values - u_term
+        
+        # Prioritize unvisited nodes by setting their score to -infinity
+        mask_unvisited = (self.child_visits == 0)
+        ucb_scores[mask_unvisited] = -np.inf
+        
+        # Select best index (Minimizing opponent's gain)
+        best_idx = np.argmin(ucb_scores)
+        intended_action = self.valid_actions[best_idx]
+        actual_action = intended_action
+
+        # 2. Handle Stochasticity (Slip probability)
+        if self.game.is_stochastic and np.random.rand() < self.game.randomness:
+            actual_action = np.random.choice(self.valid_actions)
+        
+        # 3. Lazy Expansion: Create child node only if traversed
+        if actual_action not in self.children:
+            # Optimize state copying
+            if hasattr(self.state, 'clone'): 
+                next_state = self.state.clone()
+            else: 
+                next_state = copy.deepcopy(self.state)
+
+            # Apply action
+            if self.game.is_stochastic:
+                 if hasattr(self.game, 'get_next_absolute_state'):
+                    next_state = self.game.get_next_absolute_state(next_state, actual_action)
+                 else:
+                    next_state = self.game.get_next_state(next_state, actual_action)
+            else:
+                next_state = self.game.get_next_state(next_state, actual_action)
+
+            opponent = self.game.get_opponent(self.player)
+            
+            self.children[actual_action] = Node(
+                game=self.game, state=next_state, player=opponent,
+                C=self.C, p=self.p, gamma=self.gamma,
+                parent=self, action_taken=actual_action
+            )
+            
+        return self.children[actual_action], best_idx
+
+    def expand(self, policy, valid_moves):
+        """
+        Initializes child statistics based on the policy network output.
+        """
+        self.valid_actions = np.array(valid_moves)
+        num_actions = len(valid_moves)
+        
+        # Normalize policy over valid moves
+        probs = policy[valid_moves]
+        prob_sum = np.sum(probs)
+        if prob_sum > 0: 
+            probs /= prob_sum
+        else: 
+            probs = np.ones(num_actions) / num_actions
+            
+        self.child_probs = probs
+        self.child_visits = np.zeros(num_actions, dtype=np.float32)
+        self.child_q_values = np.zeros(num_actions, dtype=np.float32)
+
+    def compute_powermean_value(self):
+        """
+        Computes the PowerMean value using the 'Leapfrog' method.
+        
+        Logic:
+        - If a child is a Leaf: Value = (1 + gamma) * child.v_value
+        - If a child is Expanded: Value = Aggregate of Grandchildren's Q-values
+        
+        Formula: V = ( Sum( weight * val^p ) / Sum(weight) ) ^ (1/p)
+        """
+        
+        values_to_mean = []
+        weights = []
+        
+        for child in self.children.values():
+            if not child.is_fully_expanded(): 
+                 # Case 1: Leaf Child
+                 val = (1 + self.gamma) * child.v_value
+                 # Ensure value is non-negative for PowerMean
+                 val = max(val, 0.0) 
+                 
+                 values_to_mean.append(val)
+                 weights.append(child.visit_count)
+            else: 
+                 # Case 2: Expanded Child (Leapfrog to Grandchildren)
+                 mask = child.child_visits > 0
+                 if np.any(mask):
+                     q_vals = child.child_q_values[mask]
+                     vis_vals = child.child_visits[mask]
+                     
+                     # Ensure Q-values are non-negative
+                     q_vals = np.maximum(q_vals, 0.0)
+                     
+                     values_to_mean.extend(q_vals)
+                     weights.extend(vis_vals)
+
+        # Vectorized calculation
+        np_vals = np.array(values_to_mean, dtype=np.float32)
+        np_weights = np.array(weights, dtype=np.float32)
+        
+        total_weight = np.sum(np_weights)
+        if total_weight == 0:
+            return 0.0
+        
+        # PowerMean Calculation
+        powered = np.power(np_vals, self.p)
+        weighted_sum = np.sum(np_weights * powered)
+        
+        res = weighted_sum / total_weight
+        return np.power(res, 1.0 / self.p)
+
 
 class Stochastic_Powermean_UCT:
     def __init__(self, game, model, C=1.41, p=1.5, gamma=0.95,
@@ -145,7 +172,6 @@ class Stochastic_Powermean_UCT:
         self.name = "Stochastic_Powermean_UCT"
         self.game = game
         self.model = model
-
         self.C = C
         self.p = p
         self.gamma = gamma
@@ -155,85 +181,152 @@ class Stochastic_Powermean_UCT:
 
     @torch.no_grad()
     def search(self, states, spGames):    
-        policies, _ = self.model(
-            states=states
-        )
+        # 1. Batch Encoding & Model Prediction
+        if isinstance(states, list) and len(states) > 0 and isinstance(states[0], np.ndarray):
+             tensor_states = torch.tensor(np.stack(states), device=self.model.device)
+        else:
+             encoded = self.game.get_encoded_state(states)
+             tensor_states = torch.tensor(encoded, device=self.model.device)
 
-        policies = torch.softmax(policies, axis=1).cpu().numpy()
-        policies = (1 - self.dirichlet_epsilon) * policies + self.dirichlet_epsilon * np.random.dirichlet(
-            [self.dirichlet_alpha] * self.game.action_size, size=policies.shape[0]
-        )
+        policies, _ = self.model(tensor_states)
+        policies = torch.softmax(policies, dim=1).cpu().numpy()
         
+        # Add Dirichlet Noise for exploration
+        noise = np.random.dirichlet([self.dirichlet_alpha] * self.game.action_size, size=len(spGames))
+        policies = (1 - self.dirichlet_epsilon) * policies + self.dirichlet_epsilon * noise
+        
+        # 2. Root Initialization
         for i, spg in enumerate(spGames):
             spg_policy = policies[i]
-
             valid_moves = self.game.get_valid_moves(states[i])
-            # create mask for valid moves
-            valid_moves = np.array([1 if j in valid_moves else 0 for j in range(self.game.action_size)])
-
-            spg_policy *= valid_moves
-            if np.sum(spg_policy) == 0:
-                spg_policy = valid_moves / np.sum(valid_moves)
-            else:
-                spg_policy /= np.sum(spg_policy)
+            
+            # Mask invalid moves
+            mask = np.zeros(self.game.action_size)
+            mask[valid_moves] = 1
+            spg_policy *= mask
+            s = np.sum(spg_policy)
+            
+            if s > 0: 
+                spg_policy /= s
+            else: 
+                spg_policy[valid_moves] = 1.0 / len(valid_moves)
 
             spg.root = Node(
-                game=self.game, 
-                state=states[i], 
-                player=self.game.get_current_player(states[i]),
-                C=self.C,
-                p=self.p,
-                gamma=self.gamma,
-                visit_count=1
+                game=self.game, state=states[i], player=self.game.get_current_player(states[i]),
+                C=self.C, p=self.p, gamma=self.gamma, parent=None
             )
-            spg.root.expand(spg_policy)
+            spg.root.expand(spg_policy, valid_moves)
+            spg.root.visit_count = 1 
         
-        for search in range(self.num_searches):
-            for spg in spGames:
-                spg.node = None
+        # 3. MCTS Simulation Loop
+        for _ in range(self.num_searches):
+            expandable_spGames = []
+            expandable_nodes = []
+            
+            # --- Selection Phase ---
+            for i, spg in enumerate(spGames):
                 node = spg.root
-
+                path = [] # Stores (parent, action_index) tuples
+                
                 while node.is_fully_expanded():
-                    node = node.select_opponent()
+                    # Select next node using Worst-Action logic
+                    node, idx_in_parent = node.select_opponent()
+                    path.append((node.parent, idx_in_parent))
 
-                value, is_terminal = self.game.get_value_and_terminated(
-                    state=node.state, 
-                    player=node.player
-                )
+                value, is_terminal = self.game.get_value_and_terminated(node.state, node.player)
                 
                 if is_terminal:
-                  node.backpropagate(update_player=node.player, final_reward=value)
-                  node.parent.backpropagate(update_player=node.parent.player, final_reward=self.game.get_opponent_value(value))
+                    # Double Independent Backprop
+                    
+                    # A. Update for leaf's player
+                    self._backpropagate_independent(path, node, node.player, value)
+                    
+                    # B. Update for leaf's parent player (opponent)
+                    if node.parent:
+                         parent_val = self.game.get_opponent_value(value)
+                         # Path excludes the last step to the leaf
+                         self._backpropagate_independent(path[:-1], node.parent, node.parent.player, parent_val)
+                         
                 else:
                     spg.node = node
-                    
-            expandable_spGames = [i for i in range(len(spGames)) if spGames[i].node is not None]
-                    
-            if len(expandable_spGames) > 0:
-                states = [spGames[i].node.state for i in expandable_spGames]
-                policies, values = self.model(
-                    states=states
-                )
-                policies = torch.softmax(policies, dim=1).cpu().numpy()
-                values = values.cpu().numpy()
+                    spg.path = path
+                    expandable_spGames.append(i)
+                    expandable_nodes.append(node)
+            
+            if not expandable_spGames:
+                continue
                 
+            # --- Evaluation Phase ---
+            states_eval = [n.state for n in expandable_nodes]
+            if hasattr(self.game, 'get_encoded_state_batch'): 
+                 enc_states = self.game.get_encoded_state_batch(states_eval)
+                 input_tensor = torch.tensor(enc_states, device=self.model.device)
+            elif isinstance(states_eval[0], np.ndarray):
+                 input_tensor = torch.tensor(np.stack(states_eval), device=self.model.device)
+            else:
+                 enc_states = self.game.get_encoded_state(states_eval)
+                 input_tensor = torch.tensor(enc_states, device=self.model.device)
+            
+            p_preds, v_preds = self.model(input_tensor)
+            p_preds = torch.softmax(p_preds, dim=1).cpu().numpy()
+            v_preds = v_preds.cpu().numpy().flatten()
+            
+            # --- Expansion & Backpropagation Phase ---
             for i, idx in enumerate(expandable_spGames):
-                node = spGames[idx].node
-                spg_policy, spg_value = policies[i], values[i]
-
-                spg_value = (spg_value + 1) / 2  # Normalize value to [0, 1]
+                spg = spGames[idx]
+                node = spg.node
+                
+                policy = p_preds[i]
+                value = (v_preds[i] + 1) / 2 # Normalize to [0, 1]
                 
                 valid_moves = self.game.get_valid_moves(node.state)
-                # create mask for valid moves
-                valid_moves = np.array([1 if j in valid_moves else 0 for j in range(self.game.action_size)])
+                node.expand(policy, valid_moves)
                 
-                spg_policy *= valid_moves
-                if np.sum(spg_policy) == 0:
-                    spg_policy = valid_moves / np.sum(valid_moves)
-                else:
-                    spg_policy /= np.sum(spg_policy)
+                # Double Independent Update from expanded node
+                
+                # A. Update current node's player
+                self._backpropagate_independent(spg.path, node, node.player, value)
+                
+                # B. Update parent node's player (opponent)
+                if node.parent:
+                    parent_val = self.game.get_opponent_value(value)
+                    self._backpropagate_independent(spg.path[:-1], node.parent, node.parent.player, parent_val)
 
-                node.expand(spg_policy)
-                node.backpropagate(update_player=node.player, final_reward=spg_value)  
+    def _backpropagate_independent(self, path, start_node, update_player, final_reward):
+        """
+        Independent Backpropagation:
+        Updates only the nodes belonging to `update_player`.
+        Maintains tree topology traversal (current_node update) even if player update is skipped.
+        """
+        current_node = start_node
 
-                node.parent.backpropagate(update_player=node.parent.player, final_reward=self.game.get_opponent_value(spg_value))
+        # Update start node if applicable
+        if current_node.player == update_player:
+            current_node.visit_count += 1
+            current_node.v_value = final_reward
+        
+        # Traverse up the path
+        for i in range(len(path) - 1, -1, -1):
+            parent, action_idx = path[i]
+            
+            # Only update statistics if parent belongs to the target player
+            if parent.player == update_player:
+                
+                # 1. Update Q-value
+                immediate_reward, _ = self.game.get_value_and_terminated(current_node.state, current_node.player)
+                
+                n_visit = parent.child_visits[action_idx]
+                old_q = parent.child_q_values[action_idx]
+                
+                # Q Update Formula: Q_new = (Q_old * N + Reward + Gamma * V_child) / (N + 1)
+                update_target = (old_q * n_visit + immediate_reward + self.gamma * current_node.v_value) / (n_visit + 1)
+                
+                parent.child_q_values[action_idx] = update_target
+                parent.child_visits[action_idx] += 1
+
+                # 2. Update V-value (PowerMean)
+                parent.visit_count += 1
+                parent.v_value = parent.compute_powermean_value()
+            
+            # Always move up the tree to maintain topology
+            current_node = parent

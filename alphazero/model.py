@@ -96,7 +96,26 @@ class ResNet(nn.Module):
         self.to(device)
 
     def forward(self, states):
-        x = torch.tensor(self.game.get_encoded_state(states), device=self.device)
+        if isinstance(states, torch.Tensor):
+            x = states
+            
+        elif isinstance(states, np.ndarray):
+            x = torch.tensor(states, device=self.device, dtype=torch.float32)
+            
+        elif isinstance(states, (list, tuple)):
+            if len(states) == 0:
+                 # Handle empty batch
+                 return torch.empty(0, device=self.device), torch.empty(0, device=self.device)
+            
+            if isinstance(states[0], np.ndarray):
+                x = torch.tensor(np.array(states), device=self.device, dtype=torch.float32)
+            else:
+                x = torch.tensor(self.game.get_encoded_state(states), device=self.device, dtype=torch.float32)
+        else:
+             x = torch.tensor(self.game.get_encoded_state(states), device=self.device, dtype=torch.float32)
+        
+        if x.dtype != torch.float32:
+            x = x.float()
 
         x = self.startBlock(x)
         for resBlock in self.backBone:
