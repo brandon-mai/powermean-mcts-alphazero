@@ -130,10 +130,11 @@ class TournamentWorker:
             for spg in spgs:
                 # 1. Extract Action Probabilities from MCTS Root
                 if spg.root is not None:
+
                     # Note: Assumes root.children is populated. 
                     # For optimization, checking child.visit_count is sufficient.
                     counts = np.zeros(action_size)
-                    for child in spg.root.children:
+                    for child in spg.root.children.values(): 
                         counts[child.action_taken] = child.visit_count
                     
                     sum_counts = np.sum(counts)

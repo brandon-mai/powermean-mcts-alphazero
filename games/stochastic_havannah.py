@@ -47,6 +47,9 @@ class Stochastic_Havannah():
     def get_opponent(self, player):
         return 1 - player 
 
+    def get_opponent_value(self, value):
+        return 1.0 - value
+
     def get_encoded_state(self, state):
         if isinstance(state, (list, tuple)):
             batch_size = len(state)
