@@ -1,0 +1,109 @@
+{
+    "config": {
+        "game": "Stochastic_TicTacToe",
+        "checkpoint_paths": [
+            "/home/iec/Desktop/KhaiDD/powermean-mcts-alphazero/checkpoint/policy_AlphaZero_Stochastic_TicTacToe_PUCT_iter_20.pt"
+        ],
+        "num_runs": 15,
+        "num_searches": 300,
+        "C": 1.41,
+        "p": [
+            1.0,
+            1.2,
+            1.5,
+            2.0,
+            2.5,
+            3.0,
+            4.0
+        ],
+        "gamma": 0.95,
+        "dirichlet_epsilon": 0.01,
+        "dirichlet_alpha": 0.01,
+        "num_games_per_pair": 50,
+        "games_per_worker": 50,
+        "num_games_parallel": 4,
+        "temperature": 1.0
+    },
+    "results": {
+        "Stochastic_Powermean_UCT_p=1.0": {
+            "win_mean": 267.6666666666667,
+            "win_std": 12.048051940274641,
+            "loss_mean": 251.06666666666666,
+            "loss_std": 11.203967551224384,
+            "draw_mean": 181.26666666666668,
+            "draw_std": 13.752413929521206,
+            "win_rate_mean": 38.238095238095234,
+            "win_rate_std": 1.7211502771820917
+        },
+        "Stochastic_Powermean_UCT_p=1.2": {
+            "win_mean": 268.06666666666666,
+            "win_std": 13.906673058483669,
+            "loss_mean": 251.2,
+            "loss_std": 15.087301503803344,
+            "draw_mean": 180.73333333333332,
+            "draw_std": 12.222747463461541,
+            "win_rate_mean": 38.2952380952381,
+            "win_rate_std": 1.9866675797833806
+        },
+        "Stochastic_Powermean_UCT_p=1.5": {
+            "win_mean": 264.73333333333335,
+            "win_std": 11.042141499224183,
+            "loss_mean": 256.73333333333335,
+            "loss_std": 9.35568751556447,
+            "draw_mean": 178.53333333333333,
+            "draw_std": 9.979089248133931,
+            "win_rate_mean": 37.81904761904763,
+            "win_rate_std": 1.5774487856034551
+        },
+        "Stochastic_Powermean_UCT_p=2.0": {
+            "win_mean": 261.46666666666664,
+            "win_std": 12.004813849267116,
+            "loss_mean": 262.26666666666665,
+            "loss_std": 12.396056720676226,
+            "draw_mean": 176.26666666666668,
+            "draw_std": 10.890158656124141,
+            "win_rate_mean": 37.35238095238095,
+            "win_rate_std": 1.7149734070381601
+        },
+        "Stochastic_Powermean_UCT_p=2.5": {
+            "win_mean": 266.8666666666667,
+            "win_std": 13.305971925751567,
+            "loss_mean": 252.93333333333334,
+            "loss_std": 13.137562770756057,
+            "draw_mean": 180.2,
+            "draw_std": 10.584265050851034,
+            "win_rate_mean": 38.12380952380953,
+            "win_rate_std": 1.9008531322502253
+        },
+        "Stochastic_Powermean_UCT_p=3.0": {
+            "win_mean": 260.06666666666666,
+            "win_std": 14.897277901982259,
+            "loss_mean": 259.73333333333335,
+            "loss_std": 10.214151403268355,
+            "draw_mean": 180.2,
+            "draw_std": 14.958609561052127,
+            "win_rate_mean": 37.15238095238096,
+            "win_rate_std": 2.1281825574260362
+        },
+        "Stochastic_Powermean_UCT_p=4.0": {
+            "win_mean": 255.0,
+            "win_std": 11.189280584559492,
+            "loss_mean": 267.8666666666667,
+            "loss_std": 12.170273437994544,
+            "draw_mean": 177.13333333333333,
+            "draw_std": 10.947551730359118,
+            "win_rate_mean": 36.42857142857143,
+            "win_rate_std": 1.5984686549370701
+        },
+        "PUCT": {
+            "win_mean": 247.86666666666667,
+            "win_std": 13.970763122400372,
+            "loss_mean": 289.93333333333334,
+            "loss_std": 8.644587259602906,
+            "draw_mean": 162.2,
+            "draw_std": 13.018960531983087,
+            "win_rate_mean": 35.409523809523805,
+            "win_rate_std": 1.995823303200054
+        }
+    }
+}
