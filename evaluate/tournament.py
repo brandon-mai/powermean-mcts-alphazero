@@ -53,13 +53,14 @@ def get_game_class(game_name):
     return mapping[game_name]
 
 def get_model_config_and_class(game_name):
-    """Returns the Model Class and specific architecture config based on the game."""
-    if "ConnectFour" in game_name:
+    if "TicTacToe" in game_name:
+        config = {"num_resBlocks": 5, "num_hidden": 64}
+    elif "ConnectFour" in game_name:
         config = {"num_resBlocks": 9, "num_hidden": 128}
     elif "Breakthrough" in game_name:
         config = {"num_resBlocks": 12, "num_hidden": 128}
-    else:
-        config = {"num_resBlocks": 5, "num_hidden": 64} 
+    elif "Havannah" in game_name or "Y" in game_name:
+        config = {"num_resBlocks": 20, "num_hidden": 256}
     return ResNet, config
 
 
@@ -410,7 +411,8 @@ def run_tournament(args):
                 "name": f"Stochastic_Powermean_UCT_p={p}", 
                 "checkpoint_path": checkpoint_path,
                 "mcts_cls": Stochastic_Powermean_UCT, 
-                "mcts_args": args_stoch 
+                "mcts_args": args_stoch,
+                "top_k": 7
             })
 
         # Add Baseline PUCT
@@ -418,7 +420,8 @@ def run_tournament(args):
             "name": "PUCT",
             "checkpoint_path": checkpoint_path,
             "mcts_cls": PUCT, 
-            "mcts_args": mcts_args_base 
+            "mcts_args": mcts_args_base,
+            "top_k": 7
         })
         
         all_runs_results = []

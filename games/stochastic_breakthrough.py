@@ -36,6 +36,11 @@ class Stochastic_Breakthrough():
         next_state.apply_action(actual_action)  
         return next_state
 
+    def get_next_absolute_state(self, state, action):
+        next_state = state.clone()
+        next_state.apply_action(action)  
+        return next_state
+
     def get_valid_moves(self, state):
         return state.legal_actions()
 

@@ -43,8 +43,6 @@ def get_model_config(game_name):
         return {"num_resBlocks": 12, "num_hidden": 128}
     elif "Havannah" in game_name or "Y" in game_name:
         return {"num_resBlocks": 20, "num_hidden": 256}
-    else:
-        return {"num_resBlocks": 9, "num_hidden": 128}
 
 def main(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

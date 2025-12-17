@@ -50,12 +50,16 @@ class Node:
         
         sqrt_n = math.sqrt(self.visit_count)
         u_values = self.C * self.child_probs * sqrt_n / (1 + self.child_visits)
-        
-        ucb_scores = q_values + u_values
 
-        # Select the best action based on UCB score (Intended Action)
-        best_idx = np.argmax(ucb_scores)
-        intended_action = self.valid_actions[best_idx]
+        ucb_scores = q_values - u_values
+
+        # each action should be visited at least once! 
+        mask_unvisited = (self.child_visits == 0)
+        ucb_scores[mask_unvisited] = -np.inf
+
+        # Select the worst action based on UCB score (Intended Action)
+        worst_idx = np.argmin(ucb_scores)
+        intended_action = self.valid_actions[worst_idx]
         
         actual_action = intended_action
         
@@ -63,7 +67,7 @@ class Node:
         # If slip occurs, we pick a random valid action instead of the intended one.
         if self.game.is_stochastic and np.random.rand() < self.game.randomness:
             actual_action = np.random.choice(self.valid_actions)
-            # Note: 'best_idx' remains pointing to the 'intended_action' 
+            # Note: 'worst_idx' remains pointing to the 'intended_action' 
             # to properly update Q-values for the chosen strategy.
             
         # 3. Lazy Expansion
@@ -71,10 +75,7 @@ class Node:
         if actual_action not in self.children:
             # Create next state
             if self.game.is_stochastic:
-                if hasattr(self.game, 'get_next_absolute_state'):
-                    next_state = self.game.get_next_absolute_state(self.state, actual_action)
-                else:
-                    next_state = self.game.get_next_state(self.state, actual_action)
+                next_state = self.game.get_next_absolute_state(self.state, actual_action)
             else:
                 next_state = self.game.get_next_state(self.state, actual_action)
 
@@ -86,23 +87,32 @@ class Node:
             )
             
         # Return the Node we landed on AND the Index of the action we Intended to take.
-        return self.children[actual_action], best_idx
+        return self.children[actual_action], worst_idx
 
-    def expand(self, policy, valid_moves):
+    def expand(self, policy, valid_moves, top_k=None):
         """
         Initializes child statistics based on the policy network output.
+        Applies Top-K Pruning if top_k is specified.
         """
-        self.valid_actions = np.array(valid_moves)
+        valid_moves = np.array(valid_moves)
+        probs = policy[valid_moves]
+        
+        if top_k is not None and len(valid_moves) > top_k:
+            top_indices = np.argsort(probs)[-top_k:][::-1]
+            
+            valid_moves = valid_moves[top_indices]
+            probs = probs[top_indices]
+            
+        prob_sum = np.sum(probs)
+        if prob_sum > 0:
+            probs = probs / prob_sum
+        else:
+            probs = np.ones(len(valid_moves)) / len(valid_moves)
+            
+        self.valid_actions = valid_moves
+        self.child_probs = probs
         num_actions = len(valid_moves)
         
-        # Normalize policy over valid moves
-        probs = policy[valid_moves]
-        if np.sum(probs) == 0:
-            probs = np.ones(num_actions) / num_actions
-        else:
-            probs = probs / np.sum(probs)
-            
-        self.child_probs = probs
         self.child_visits = np.zeros(num_actions, dtype=np.float32)
         self.child_values = np.zeros(num_actions, dtype=np.float32)
 
@@ -111,13 +121,14 @@ class PUCT:
     """
     Standard AlphaZero PUCT algorithm implementation with Batch Processing support.
     """
-    def __init__(self, game, model, C, dirichlet_epsilon, dirichlet_alpha, num_searches):
+    def __init__(self, game, model, C, dirichlet_epsilon, dirichlet_alpha, num_searches, top_k=None):
         self.game = game
         self.model = model
         self.C = C
         self.dirichlet_epsilon = dirichlet_epsilon
         self.dirichlet_alpha = dirichlet_alpha
         self.num_searches = num_searches
+        self.top_k = top_k
 
     @torch.no_grad()
     def search(self, states, spGames):
@@ -125,14 +136,15 @@ class PUCT:
         # Handle batch encoding for efficiency
         if isinstance(states, list):
              if len(states) > 0 and isinstance(states[0], np.ndarray):
-                 encoded_states = np.stack(states)
-                 tensor_states = torch.tensor(encoded_states, device=self.model.device)
+                encoded_states = np.stack(states)
+                tensor_states = torch.tensor(encoded_states, device=self.model.device)
              else:
-                 encoded_states = self.game.get_encoded_state(states)
-                 tensor_states = torch.tensor(encoded_states, device=self.model.device)
+                encoded_states = self.game.get_encoded_state(states)
+                tensor_states = torch.tensor(encoded_states, device=self.model.device)
         else:
-             encoded_states = self.game.get_encoded_state(states)
-             tensor_states = torch.tensor(encoded_states, device=self.model.device)
+            encoded_states = self.game.get_encoded_state(states)
+            tensor_states = torch.tensor(encoded_states, device=self.model.device)
+            raise ValueError("States should be a list of states for batch processing.")
 
         policies, _ = self.model(tensor_states)
         policies = torch.softmax(policies, dim=1).cpu().numpy()
@@ -144,7 +156,7 @@ class PUCT:
         for i, spg in enumerate(spGames):
             spg.root = Node(self.game, self.C, states[i], self.game.get_current_player(states[i]))
             valid_moves = self.game.get_valid_moves(states[i])
-            spg.root.expand(policies[i], valid_moves)
+            spg.root.expand(policies[i], valid_moves, top_k=self.top_k)
         
         # --- 2. MCTS Simulation Loop ---
         for _ in range(self.num_searches):
@@ -199,7 +211,7 @@ class PUCT:
                 value = (v_preds[i] + 1) / 2 # Normalize value to [0, 1]
                 
                 valid_moves = self.game.get_valid_moves(node.state)
-                node.expand(policy, valid_moves)
+                node.expand(policy, valid_moves, top_k=self.top_k)
                 
                 # Backpropagate the evaluated value up to the root
                 self._backpropagate_path(spg.path, node, value)
@@ -224,12 +236,12 @@ class PUCT:
         for i in range(len(path) - 1, -1, -1):
             parent_node, action_idx = path[i]
             
-            # Flip value because the parent is the opponent 
-            current_value = 1.0 - current_value
-            
             # Update Parent Stats (Vectorized array update)
             parent_node.visit_count += 1
             parent_node.value_sum += current_value
             
             parent_node.child_visits[action_idx] += 1
             parent_node.child_values[action_idx] += current_value
+            
+            # Flip value 
+            current_value = 1.0 - current_value
