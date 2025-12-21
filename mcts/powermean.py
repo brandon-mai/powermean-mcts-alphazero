@@ -270,12 +270,14 @@ class Stochastic_Powermean_UCT:
         current_node = start_node
         current_node.visit_count += 1
         current_node.v_value = final_reward
+
+        # second leaf node (parent of start_node)
+        is_travesed_second_leaf = False
         
         # Traverse up the path
         for i in range(len(path) - 1, -1, -1):
             parent, action_idx = path[i]
-            
-            # Update Q-value
+
             immediate_reward, _ = self.game.get_value_and_terminated(current_node.state, current_node.player)
             
             n_visit = parent.child_visits[action_idx]
@@ -288,8 +290,14 @@ class Stochastic_Powermean_UCT:
             parent.child_visits[action_idx] += 1
 
             # Update V-value (PowerMean)
-            parent.visit_count += 1
-            parent.v_value = parent.compute_powermean_value()
+            if not is_travesed_second_leaf:
+                parent.visit_count += 1
+                parent.v_value = self.game.get_opponent_value(final_reward)
+                
+                is_travesed_second_leaf = True            
+            else:            
+                parent.visit_count += 1
+                parent.v_value = parent.compute_powermean_value()
 
             # Move up the tree to maintain topology
             current_node = parent
