@@ -101,6 +101,11 @@ class ResBlock(nn.Module):
         self.conv2 = nn.Conv2d(num_channels, num_channels, kernel_size=3, padding=1)
         self.bn2 = nn.BatchNorm2d(num_channels)
         
+        # Zero-gamma initialization for the last BN in each ResBlock
+        # This makes the block act as identity at initialization
+        nn.init.constant_(self.bn2.weight, 0)
+        nn.init.constant_(self.bn2.bias, 0)
+        
     def forward(self, x):
         residual = x
         x = F.relu(self.bn1(self.conv1(x)))
@@ -159,15 +164,19 @@ class DynamicsNetwork(nn.Module):
         for block in self.resblocks:
             x = block(x)
         
-        next_hidden_state = x
+        next_hidden_state = x * 0.5
         
         r = F.relu(self.reward_bn(self.reward_conv(x)))
         r = r.view(batch_size, -1)
         
         if self.reward_fc is None or self.reward_fc.in_features != r.shape[1]:
             self.reward_fc = nn.Linear(r.shape[1], self.reward_support_size).to(r.device)
+            nn.init.kaiming_normal_(self.reward_fc.weight)
+            if self.reward_fc.bias is not None:
+                 nn.init.constant_(self.reward_fc.bias, 0)
         
         reward_logits = self.reward_fc(r)
+             
         return next_hidden_state, reward_logits
 
 
@@ -207,7 +216,7 @@ class PredictionNetwork(nn.Module):
 
 
 class AfterstateDynamicsNetwork(nn.Module):
-    """g(afterstate, chance) → (next_hidden_state, reward)"""
+    """g(afterstate, chance) → (next_hidden_state)"""
     
     def __init__(self, hidden_channels, chance_space_size, reward_support_size=601):
         super().__init__()
@@ -235,12 +244,16 @@ class AfterstateDynamicsNetwork(nn.Module):
         for block in self.resblocks:
             x = block(x)
             
-        next_hidden_state = x
+        next_hidden_state = x * 0.5
         
         r = F.relu(self.reward_bn(self.reward_conv(x)))
         r = r.view(batch_size, -1)
         if self.reward_fc is None or self.reward_fc.in_features != r.shape[1]:
             self.reward_fc = nn.Linear(r.shape[1], self.reward_support_size).to(r.device)
+            nn.init.kaiming_normal_(self.reward_fc.weight)
+            if self.reward_fc.bias is not None:
+                 nn.init.constant_(self.reward_fc.bias, 0)
+        
         reward_logits = self.reward_fc(r)
         
         return next_hidden_state, reward_logits
@@ -268,6 +281,9 @@ class AfterstatePredictionNetwork(nn.Module):
         c = c.view(batch_size, -1)
         if self.chance_fc is None or self.chance_fc.in_features != c.shape[1]:
             self.chance_fc = nn.Linear(c.shape[1], self.chance_space_size).to(c.device)
+            nn.init.kaiming_normal_(self.chance_fc.weight)
+            if self.chance_fc.bias is not None:
+                nn.init.constant_(self.chance_fc.bias, 0)
         chance_logits = self.chance_fc(c)
         
         v = F.relu(self.value_bn(self.value_conv(afterstate)))
@@ -282,7 +298,7 @@ class AfterstatePredictionNetwork(nn.Module):
 class StochasticMuZeroNetwork(nn.Module):
     def __init__(self, observation_shape, action_size, hidden_channels=128,
                  num_resblocks=16, chance_space_size=32, use_afterstate=False,
-                 support_size=601, device="cpu"):
+                 support_size=601, device="cpu", **kwargs):
         super().__init__()
         
         self.observation_shape = observation_shape
@@ -314,7 +330,7 @@ class StochasticMuZeroNetwork(nn.Module):
             )
             
             self.afterstate_dynamics_network = AfterstateDynamicsNetwork(
-                hidden_channels, chance_space_size, support_size
+                hidden_channels, chance_space_size
             )
             self.afterstate_prediction_network = AfterstatePredictionNetwork(
                 hidden_channels, chance_space_size, support_size

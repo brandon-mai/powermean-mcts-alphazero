@@ -1,0 +1,135 @@
+{
+    "config_args": {
+        "game": "Stochastic_FrozenLake_4x4_Random_Map",
+        "checkpoint_paths": [],
+        "num_runs": 1,
+        "num_searches": 2,
+        "C": 1.41,
+        "gamma": 0.95,
+        "dirichlet_epsilon": 0.01,
+        "dirichlet_alpha": 0.01,
+        "num_games_per_pair": 1,
+        "games_per_worker": 15,
+        "num_games_parallel": 1,
+        "temperature": 1.0,
+        "seed": null
+    },
+    "algo_configs_tested": [
+        {
+            "name": "Classic",
+            "mcts_type": "classic",
+            "p": null
+        },
+        {
+            "name": "PowerMean_p1.0",
+            "mcts_type": "powermean",
+            "p": 1.0
+        },
+        {
+            "name": "PowerMean_p1.2",
+            "mcts_type": "powermean",
+            "p": 1.2
+        },
+        {
+            "name": "PowerMean_p1.5",
+            "mcts_type": "powermean",
+            "p": 1.5
+        },
+        {
+            "name": "PowerMean_p2.0",
+            "mcts_type": "powermean",
+            "p": 2.0
+        },
+        {
+            "name": "PowerMean_p2.5",
+            "mcts_type": "powermean",
+            "p": 2.5
+        },
+        {
+            "name": "PowerMean_p3.0",
+            "mcts_type": "powermean",
+            "p": 3.0
+        },
+        {
+            "name": "PowerMean_p4.0",
+            "mcts_type": "powermean",
+            "p": 4.0
+        }
+    ],
+    "results": {
+        "random": {
+            "Classic": {
+                "mean": 0.0,
+                "std": 0.0,
+                "min": 0.0,
+                "max": 0.0,
+                "raw": [
+                    0.0
+                ]
+            },
+            "PowerMean_p1.0": {
+                "mean": 0.0,
+                "std": 0.0,
+                "min": 0.0,
+                "max": 0.0,
+                "raw": [
+                    0.0
+                ]
+            },
+            "PowerMean_p1.2": {
+                "mean": 0.0,
+                "std": 0.0,
+                "min": 0.0,
+                "max": 0.0,
+                "raw": [
+                    0.0
+                ]
+            },
+            "PowerMean_p1.5": {
+                "mean": 0.0,
+                "std": 0.0,
+                "min": 0.0,
+                "max": 0.0,
+                "raw": [
+                    0.0
+                ]
+            },
+            "PowerMean_p2.0": {
+                "mean": 0.0,
+                "std": 0.0,
+                "min": 0.0,
+                "max": 0.0,
+                "raw": [
+                    0.0
+                ]
+            },
+            "PowerMean_p2.5": {
+                "mean": 0.0,
+                "std": 0.0,
+                "min": 0.0,
+                "max": 0.0,
+                "raw": [
+                    0.0
+                ]
+            },
+            "PowerMean_p3.0": {
+                "mean": 0.0,
+                "std": 0.0,
+                "min": 0.0,
+                "max": 0.0,
+                "raw": [
+                    0.0
+                ]
+            },
+            "PowerMean_p4.0": {
+                "mean": 0.0,
+                "std": 0.0,
+                "min": 0.0,
+                "max": 0.0,
+                "raw": [
+                    0.0
+                ]
+            }
+        }
+    }
+}

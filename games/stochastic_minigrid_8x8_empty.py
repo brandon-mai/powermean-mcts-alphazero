@@ -4,13 +4,13 @@ import minigrid
 from minigrid.wrappers import ImgObsWrapper, RGBImgObsWrapper
 import copy
 
-class Stochastic_MiniGrid:
-    def __init__(self, env_id="MiniGrid-Empty-8x8-v0", reward_scale=10.0):
-        self.name = "Stochastic_MiniGrid"
+class Stochastic_MiniGrid_8x8_Empty:
+    def __init__(self, reward_scale=10.0):
+        self.name = "Stochastic_MiniGrid_8x8_Empty"
         self.num_player = 1 
         
-        self.env_id = env_id
-        self._dummy_env = gym.make(env_id, render_mode="rgb_array")
+        self.env_id = "MiniGrid-Empty-8x8-v0"
+        self._dummy_env = gym.make(self.env_id, render_mode="rgb_array")
         self._dummy_env = ImgObsWrapper(self._dummy_env) 
         
         self.action_size = self._dummy_env.action_space.n 
@@ -23,13 +23,14 @@ class Stochastic_MiniGrid:
         self.column_count = self.tensor_shape[2]        
         
         self.is_stochastic = True
-        self.randomness = 0.25 
+        self.randomness = 0.5
         self.reward_scale = reward_scale
+        print(f"game: {self.env_id}")
 
     def get_initial_state(self):
         env = gym.make(self.env_id, render_mode="rgb_array")
         env = ImgObsWrapper(env)
-        env.reset(seed=42) 
+        env.reset() 
         return env
 
     def get_current_player(self, state):
@@ -41,7 +42,7 @@ class Stochastic_MiniGrid:
         actual_action = action
         
         if np.random.rand() < self.randomness:
-            legal_moves = range(self.action_size)
+            legal_moves = [0, 1, 2] # left, right, forward for Empty 8x8
             actual_action = np.random.choice(legal_moves)
             
         obs, reward, terminated, truncated, info = next_env.step(actual_action)
@@ -53,7 +54,7 @@ class Stochastic_MiniGrid:
         return next_env
 
     def get_valid_moves(self, state):
-        return list(range(self.action_size))
+        return [0, 1, 2] # left, right, forward
 
     def get_value_and_terminated(self, state, player):
         if hasattr(state, 'custom_done'):
@@ -73,17 +74,17 @@ class Stochastic_MiniGrid:
         if isinstance(state, list):
             encoded_batch = []
             for s in state:
-                obs = s.gen_obs() 
+                obs = s.unwrapped.gen_obs() 
                 img = obs['image'] 
                 img_transposed = np.transpose(img, (2, 0, 1))
                 encoded_batch.append(img_transposed / 10.0)
                 
             return np.array(encoded_batch, dtype=np.float32)
         else:
-            obs = state.gen_obs()
+            obs = state.unwrapped.gen_obs()
             img = obs['image']
             img_transposed = np.transpose(img, (2, 0, 1))
             return (img_transposed / 10.0).astype(np.float32)
 
     def render(self, state):
-        print(f"MiniGrid Env: {self.env_id}")
+        return state.render()

@@ -16,12 +16,10 @@ from games import (
     ConnectFour, Breakthrough, TicTacToe, Havannah, Y,
     Stochastic_ConnectFour, Stochastic_Breakthrough, 
     Stochastic_TicTacToe, Stochastic_Havannah, Stochastic_Y,
-    Stochastic_MiniGrid
+    Stochastic_MiniGrid_8x8_Empty, Stochastic_MiniGrid_6x6_Empty_Random,
+    Stochastic_FrozenLake_4x4_Random_Map, Stochastic_FrozenLake_8x8_Random_Map,
+    Taxi_Is_Raining_Fickle_Passenger
 )
-
-torch.manual_seed(0)
-np.random.seed(0)
-random.seed(0)
 
 def get_game_class(game_name):
     mapping = {
@@ -35,7 +33,11 @@ def get_game_class(game_name):
         "Stochastic_TicTacToe": Stochastic_TicTacToe,
         "Stochastic_Havannah": Stochastic_Havannah,
         "Stochastic_Y": Stochastic_Y,
-        "Stochastic_MiniGrid": Stochastic_MiniGrid  
+        "Stochastic_MiniGrid_8x8_Empty": Stochastic_MiniGrid_8x8_Empty,
+        "Stochastic_MiniGrid_6x6_Empty_Random": Stochastic_MiniGrid_6x6_Empty_Random,
+        "Stochastic_FrozenLake_4x4_Random_Map": Stochastic_FrozenLake_4x4_Random_Map,
+        "Stochastic_FrozenLake_8x8_Random_Map": Stochastic_FrozenLake_8x8_Random_Map,
+        "Taxi_Is_Raining_Fickle_Passenger": Taxi_Is_Raining_Fickle_Passenger
     }
     return mapping[game_name]
 
@@ -51,17 +53,28 @@ def get_model_config(game_name, algorithm):
     elif "Havannah" in game_name or "Y" in game_name:
         config.update({"num_resBlocks": 20, "num_hidden": 256})
     elif "Stochastic_MiniGrid" in game_name:
-        config.update({"num_resBlocks": 4, "num_hidden": 64})
+        config.update({"num_resBlocks": 9, "num_hidden": 128})
+    elif "FrozenLake_4x4" in game_name:
+        config.update({"num_resBlocks": 5, "num_hidden": 64})
+    elif "FrozenLake_8x8" in game_name:
+        config.update({"num_resBlocks": 9, "num_hidden": 128})
+    elif "Taxi" in game_name:
+        config.update({"num_resBlocks": 9, "num_hidden": 128})
     
     if algorithm == "StochasticMuZero":
-        min_val, max_val = -2, 13 
+        if "Taxi" in game_name:
+             min_val, max_val = -220, 30
+        else:
+             min_val, max_val = -2, 13 
+             
         step = 1
         support_size = (max_val - min_val) // step 
         
         config.update({
             "chance_space_size": 12,
             "support_size": support_size, 
-            "support_range": (min_val, max_val, step)
+            "support_range": (min_val, max_val, step),
+            "use_afterstate": True
         })
             
     return config
@@ -93,6 +106,7 @@ def main(args):
             "chance_space_size": model_config.get("chance_space_size", 32),
             "use_afterstate": model_config.get("use_afterstate", False),
             "support_size": model_config.get("support_size", 601),
+            "support_range": model_config.get("support_range", (-300, 301, 1)),
             "device": device
         }
         
@@ -131,11 +145,12 @@ def main(args):
             "dirichlet_epsilon": args.dirichlet_epsilon,
             "dirichlet_alpha": args.dirichlet_alpha,
             "discount": args.gamma, 
-            "use_chance_nodes": True
+            "use_chance_nodes": True,
+            "support_range": model_config.get("support_range", (-300, 301, 1))
         }
         
         worker_model_args = model_args.copy()
-        worker_model_args["device"] = "cpu"
+        # device handled inside StochasticMuZero via Ray
         
         learner = StochasticMuZero(
             model=model,
@@ -203,7 +218,10 @@ if __name__ == "__main__":
                         choices=["ConnectFour", "Breakthrough", "TicTacToe", "Havannah", "Y",
                                  "Stochastic_ConnectFour", "Stochastic_Breakthrough", 
                                  "Stochastic_TicTacToe", "Stochastic_Havannah", "Stochastic_Y", 
-                                 "Stochastic_MiniGrid"],
+                                 "Stochastic_MiniGrid",
+                                 "Stochastic_MiniGrid_8x8_Empty", "Stochastic_MiniGrid_6x6_Empty_Random",
+                                 "Stochastic_FrozenLake_4x4_Random_Map", "Stochastic_FrozenLake_8x8_Random_Map",
+                                 "Taxi_Is_Raining_Fickle_Passenger"],
                         help="Game to train.")    
     
     # Algorithm selection

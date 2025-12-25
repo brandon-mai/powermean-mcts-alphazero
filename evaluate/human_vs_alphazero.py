@@ -2,10 +2,8 @@ import torch
 import numpy as np
 import argparse, sys
 
-sys.path.append('/content/powermean-mcts-alphazero/')
-sys.path.append('/content/powermean-mcts-alphazero/games')
-sys.path.append('/content/powermean-mcts-alphazero/alphazero')
-sys.path.append('/content/powermean-mcts-alphazero/mcts')
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from games import ConnectFour, Breakthrough, TicTacToe, Havannah, Y, Stochastic_ConnectFour, Stochastic_Breakthrough, Stochastic_TicTacToe, Stochastic_Havannah, Stochastic_Y
 from alphazero import ResNet
@@ -64,7 +62,7 @@ def create_mcts(algorithm, game, model, args):
         raise ValueError(f"Unknown algorithm: {algorithm}")
 
 def create_model(game, device, args):
-    if (game.name == "ConnectFour"):
+    if ("ConnectFour" in game.name):
         model = ResNet(
             game=game, 
             num_resBlocks=9, 
@@ -74,7 +72,7 @@ def create_model(game, device, args):
         model.load_state_dict(torch.load(args.checkpoint_path, map_location=device))
         model.eval()
         return model    
-    elif (game.name == "Breakthrough"):
+    elif ("Breakthrough" in game.name):
         model = ResNet(
             game=game, 
             num_resBlocks=12, 
@@ -123,7 +121,7 @@ def play_interactive(args):
         game.render(spGame[0].state)
         valid_moves = game.get_valid_moves(spGame[0].state)
 
-        if player == 0:
+        if player == 1:
             move = input("Your move: ").strip()
             try:
                 move = int(move)
@@ -139,8 +137,10 @@ def play_interactive(args):
             mcts.search(states, spGame)
 
             action_probs = np.zeros(game.action_size)
-            for child in spGame[0].root.children:
-                action_probs[child.action_taken] = child.visit_count
+            root = spGame[0].root
+            action_probs = np.zeros(game.action_size)
+            if root.valid_actions is not None:
+                action_probs[root.valid_actions] = root.child_visits
 
             action = np.argmax(action_probs)
             print(f"{action_probs}")
@@ -197,10 +197,10 @@ if __name__ == "__main__":
                         help="Power parameter p for power mean algorithms (default: 1.5).")
     parser.add_argument("--gamma", type=float, default=0.95, 
                         help="Discount factor gamma for MCTS (default: 0.95).")
-    parser.add_argument("--dirichlet_epsilon", type=float, default=0.0, 
-                        help="Dirichlet noise epsilon for MCTS (default: 0.0).")
-    parser.add_argument("--dirichlet_alpha", type=float, default=0.0, 
-                        help="Dirichlet noise alpha for MCTS (default: 0.0).")
+    parser.add_argument("--dirichlet_epsilon", type=float, default=0.01, 
+                        help="Dirichlet noise epsilon for MCTS (default: 0.01).")
+    parser.add_argument("--dirichlet_alpha", type=float, default=0.01, 
+                        help="Dirichlet noise alpha for MCTS (default: 0.01).")
 
     args = parser.parse_args()
     play_interactive(args)
